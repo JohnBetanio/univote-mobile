@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import * as Google from 'expo-auth-session/providers/google';
+import * as Linking from 'expo-linking';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/Colors';
@@ -21,15 +21,57 @@ export default function VoterLoginScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const mountedRef = useRef(true);
+  const isLoggingInWithGoogle = useRef(false);
 
   const handleGoogleLogin = async (idToken: string) => {
+    if (isLoggingInWithGoogle.current) return;
+    isLoggingInWithGoogle.current = true;
     safeSetLoading(true);
-    const result = await loginWithGoogle({ idToken });
-    safeSetLoading(false);
-    if (!result.success && mountedRef.current) {
-      Alert.alert('Access Restricted', result.error || 'Google Sign-In failed');
+    try {
+      const result = await loginWithGoogle({ idToken });
+      if (!result.success && mountedRef.current) {
+        Alert.alert('Access Restricted', result.error || 'Google Sign-In failed');
+      }
+    } catch (err: any) {
+      if (mountedRef.current) {
+        Alert.alert('Google Sign-In Error', err?.message || 'Failed to authenticate with Google');
+      }
+    } finally {
+      isLoggingInWithGoogle.current = false;
+      safeSetLoading(false);
     }
   };
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    // Listen for deep link redirects returning to the app (e.g. univote://auth/google#id_token=...)
+    const subscription = Linking.addEventListener('url', async (event) => {
+      if (event?.url) {
+        const match = event.url.match(/[#?&]id_token=([^&]+)/);
+        if (match && match[1]) {
+          const idToken = decodeURIComponent(match[1]);
+          await handleGoogleLogin(idToken);
+        }
+      }
+    });
+
+    // Check if the app was opened directly with an initial URL
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        const match = url.match(/[#?&]id_token=([^&]+)/);
+        if (match && match[1]) {
+          const idToken = decodeURIComponent(match[1]);
+          handleGoogleLogin(idToken);
+        }
+      }
+    });
+
+    return () => {
+      mountedRef.current = false;
+      subscription.remove();
+    };
+  }, []);
 
   const handleGoogleButtonPress = async () => {
     const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -41,18 +83,39 @@ export default function VoterLoginScreen() {
       return;
     }
 
-    const redirectUri = 'http://localhost:8000/voter/auth/google/callback';
     const nonce = Math.random().toString(36).substring(2);
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-      `client_id=${encodeURIComponent(clientId)}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&response_type=id_token` +
-      `&scope=${encodeURIComponent('openid email profile')}` +
-      `&nonce=${encodeURIComponent(nonce)}`;
 
     try {
       safeSetLoading(true);
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+
+      let authUrl: string;
+      let returnUrl: string;
+
+      if (Platform.OS === 'web') {
+        returnUrl = typeof window !== 'undefined' && window.location ? window.location.origin : makeRedirectUri();
+        authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+          `client_id=${encodeURIComponent(clientId)}` +
+          `&redirect_uri=${encodeURIComponent(returnUrl)}` +
+          `&response_type=id_token` +
+          `&scope=${encodeURIComponent('openid email profile')}` +
+          `&nonce=${encodeURIComponent(nonce)}`;
+      } else {
+        // Mobile platform (Expo Go or standalone build)
+        // Uses the registered Expo auth proxy for seamless redirect back to the app
+        returnUrl = makeRedirectUri({ scheme: 'univote', path: 'auth/google' });
+        const proxyBase = 'https://auth.expo.io/@johnbetanio/univote';
+        const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+          `client_id=${encodeURIComponent(clientId)}` +
+          `&redirect_uri=${encodeURIComponent(proxyBase)}` +
+          `&response_type=id_token` +
+          `&scope=${encodeURIComponent('openid email profile')}` +
+          `&nonce=${encodeURIComponent(nonce)}`;
+
+        authUrl = `${proxyBase}/start?authUrl=${encodeURIComponent(googleAuthUrl)}&returnUrl=${encodeURIComponent(returnUrl)}`;
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
+
       if (result.type === 'success' && result.url) {
         const match = result.url.match(/[#?&]id_token=([^&]+)/);
         if (match && match[1]) {
@@ -72,6 +135,7 @@ export default function VoterLoginScreen() {
   const safeSetLoading = (value: boolean) => {
     if (mountedRef.current) setLoading(value);
   };
+
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -148,7 +212,6 @@ export default function VoterLoginScreen() {
 
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or continue with</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -161,14 +224,6 @@ export default function VoterLoginScreen() {
             <Ionicons name="logo-google" size={20} color="#4285F4" />
             <Text style={styles.secondaryBtnText}>Sign in with Google</Text>
           </TouchableOpacity>
-
-          <View style={styles.links}>
-            <TouchableOpacity onPress={() => router.push('/(auth)/VoterRegister')}>
-              <Text style={styles.linkText}>
-                Don&apos;t have an account? <Text style={styles.linkBold}>Register</Text>
-              </Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -206,9 +261,8 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.65 },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.4 },
-  divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
+  divider: { marginVertical: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#ebebeb' },
-  dividerText: { marginHorizontal: 10, color: Colors.textMuted, fontSize: 12 },
   secondaryBtn: {
     height: 50, borderWidth: 1.5, borderColor: Colors.border,
     borderRadius: 26, flexDirection: 'row', justifyContent: 'center',

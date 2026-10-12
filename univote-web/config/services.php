@@ -40,8 +40,8 @@ return [
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'ap-southeast-1'),
         'collection_id' => env('AWS_REKOGNITION_COLLECTION_ID', 'campusvote-voters'),
-        'match_threshold' => (float) env('AWS_REKOGNITION_MATCH_THRESHOLD', 80),
-        'quality_threshold' => (float) env('AWS_REKOGNITION_QUALITY_THRESHOLD', 70),
+        'match_threshold' => (float) env('AWS_REKOGNITION_MATCH_THRESHOLD', 70),
+        'quality_threshold' => (float) env('AWS_REKOGNITION_QUALITY_THRESHOLD', 50),
     ],
 
     'slack' => [

@@ -95,6 +95,10 @@ class AuthController extends Controller
             'description'=> 'User logged in via Mobile API',
         ]);
 
+        if ($role === 'student') {
+            $user->load(['facialProfile', 'organization']);
+        }
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -102,6 +106,20 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $role,
                 'hasVoted' => $role === 'student' ? $user->hasVotedIn(null) : false,
+                'is_profile_completed' => $role === 'student' ? (bool)$user->is_profile_completed : true,
+                'needs_setup' => $role === 'student' ? $user->needsProfileSetup() : false,
+                'organization_id' => $role === 'student' ? $user->organization_id : null,
+                'organization' => ($role === 'student' && $user->organization) ? [
+                    'id' => $user->organization->id,
+                    'name' => $user->organization->name,
+                    'code' => $user->organization->code,
+                ] : null,
+                'google_id' => $role === 'student' ? $user->google_id : null,
+                'age' => $role === 'student' ? $user->age : null,
+                'sex' => $role === 'student' ? $user->sex : null,
+                'course' => $role === 'student' ? $user->course : null,
+                'year_level' => $role === 'student' ? $user->year_level : null,
+                'facial_config' => $role === 'student' ? $user->facial_config : null,
             ],
             'token' => $token,
         ]);
@@ -137,9 +155,22 @@ class AuthController extends Controller
         ];
 
         if ($role === 'student' && method_exists($user, 'load')) {
-            $user->load('facialProfile');
+            $user->load(['facialProfile', 'organization']);
             $response['facial_config'] = $user->facial_config;
             $response['facial_required'] = $user->isFacialVerificationRequired();
+            $response['is_profile_completed'] = (bool)$user->is_profile_completed;
+            $response['needs_setup'] = $user->needsProfileSetup();
+            $response['organization_id'] = $user->organization_id;
+            $response['organization'] = $user->organization ? [
+                'id' => $user->organization->id,
+                'name' => $user->organization->name,
+                'code' => $user->organization->code,
+            ] : null;
+            $response['google_id'] = $user->google_id;
+            $response['age'] = $user->age;
+            $response['sex'] = $user->sex;
+            $response['course'] = $user->course;
+            $response['year_level'] = $user->year_level;
         }
 
         return response()->json($response);
@@ -211,6 +242,7 @@ class AuthController extends Controller
                 'course' => 'Not Specified',
                 'year_level' => '1st Year',
                 'is_verified' => true,
+                'is_profile_completed' => false,
             ]);
         } else {
             if ($googleId && !$voter->google_id) {
@@ -218,6 +250,7 @@ class AuthController extends Controller
             }
         }
 
+        $voter->load(['facialProfile', 'organization']);
         $token = $voter->createToken('mobile-app')->plainTextToken;
 
         return response()->json([
@@ -228,8 +261,154 @@ class AuthController extends Controller
                 'role' => 'student',
                 'hasVoted' => $voter->hasVotedIn(null),
                 'is_new_user' => $isNewUser,
+                'is_profile_completed' => (bool)$voter->is_profile_completed,
+                'needs_setup' => $voter->needsProfileSetup(),
+                'organization_id' => $voter->organization_id,
+                'organization' => $voter->organization ? [
+                    'id' => $voter->organization->id,
+                    'name' => $voter->organization->name,
+                    'code' => $voter->organization->code,
+                ] : null,
+                'google_id' => $voter->google_id,
+                'age' => $voter->age,
+                'sex' => $voter->sex,
+                'course' => $voter->course,
+                'year_level' => $voter->year_level,
+                'facial_config' => $voter->facial_config,
             ],
             'token' => $token,
+        ]);
+    }
+
+    public function setupProfile(Request $request)
+    {
+        $voter = $request->user();
+        if (!$voter || !($voter instanceof Voter)) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'password' => 'required|string|min:6',
+            'name' => 'required|string|max:255',
+            'age' => 'required|integer|min:15|max:100',
+            'sex' => 'required|string|in:Male,Female,Other',
+            'course' => 'required|string|max:255',
+            'year_level' => 'required|string|max:50',
+            'organization_id' => 'required|exists:organizations,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        $voter->update([
+            'name' => $request->name,
+            'password' => Hash::make($request->password),
+            'age' => $request->age,
+            'sex' => $request->sex,
+            'course' => $request->course,
+            'year_level' => $request->year_level,
+            'organization_id' => $request->organization_id,
+            'is_profile_completed' => true,
+        ]);
+
+        $voter->refresh();
+        $voter->load(['facialProfile', 'organization']);
+
+        \App\Models\AuditLog::record([
+            'user_id'    => $voter->id,
+            'user_type'  => get_class($voter),
+            'actor_name' => $voter->name ?? $voter->email,
+            'action'     => 'PROFILE_SETUP',
+            'description'=> 'Voter completed app profile & password setup',
+        ]);
+
+        return response()->json([
+            'message' => 'Profile setup saved successfully',
+            'user' => [
+                'id' => $voter->id,
+                'name' => $voter->name,
+                'email' => $voter->email,
+                'role' => 'student',
+                'hasVoted' => $voter->hasVotedIn(null),
+                'is_profile_completed' => (bool)$voter->is_profile_completed,
+                'needs_setup' => $voter->needsProfileSetup(),
+                'organization_id' => $voter->organization_id,
+                'organization' => $voter->organization ? [
+                    'id' => $voter->organization->id,
+                    'name' => $voter->organization->name,
+                    'code' => $voter->organization->code,
+                ] : null,
+                'google_id' => $voter->google_id,
+                'age' => $voter->age,
+                'sex' => $voter->sex,
+                'course' => $voter->course,
+                'year_level' => $voter->year_level,
+                'facial_config' => $voter->facial_config,
+            ],
+        ]);
+    }
+
+    public function updateProfile(Request $request)
+    {
+        $voter = $request->user();
+        if (!$voter || !($voter instanceof Voter)) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|required|string|max:255',
+            'age' => 'sometimes|required|integer|min:15|max:100',
+            'sex' => 'sometimes|required|string|in:Male,Female,Other',
+            'course' => 'sometimes|required|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()->first()], 422);
+        }
+
+        // Only allow editing name, age, sex, and course
+        $allowed = [];
+        if ($request->has('name')) $allowed['name'] = $request->name;
+        if ($request->has('age')) $allowed['age'] = (int)$request->age;
+        if ($request->has('sex')) $allowed['sex'] = $request->sex;
+        if ($request->has('course')) $allowed['course'] = $request->course;
+
+        $voter->update($allowed);
+        $voter->refresh();
+        $voter->load(['facialProfile', 'organization']);
+
+        \App\Models\AuditLog::record([
+            'user_id'    => $voter->id,
+            'user_type'  => get_class($voter),
+            'actor_name' => $voter->name ?? $voter->email,
+            'action'     => 'PROFILE_UPDATE',
+            'description'=> 'Voter updated personal profile information',
+        ]);
+
+        return response()->json([
+            'message' => 'Profile updated successfully',
+            'user' => [
+                'id' => $voter->id,
+                'name' => $voter->name,
+                'email' => $voter->email,
+                'role' => 'student',
+                'hasVoted' => $voter->hasVotedIn(null),
+                'is_profile_completed' => (bool)$voter->is_profile_completed,
+                'needs_setup' => $voter->needsProfileSetup(),
+                'organization_id' => $voter->organization_id,
+                'organization' => $voter->organization ? [
+                    'id' => $voter->organization->id,
+                    'name' => $voter->organization->name,
+                    'code' => $voter->organization->code,
+                ] : null,
+                'google_id' => $voter->google_id,
+                'age' => $voter->age,
+                'sex' => $voter->sex,
+                'course' => $voter->course,
+                'year_level' => $voter->year_level,
+                'facial_config' => $voter->facial_config,
+            ],
         ]);
     }
 }

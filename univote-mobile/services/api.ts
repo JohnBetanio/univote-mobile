@@ -24,6 +24,12 @@ interface ApiResponse<T> {
   facial_config?: FacialConfig;
 }
 
+interface Organization {
+  id: number;
+  name: string;
+  code: string;
+}
+
 interface User {
   id: string;
   name: string;
@@ -38,6 +44,11 @@ interface User {
   course?: string;
   year_level?: string;
   organization_id?: number | null;
+  organization?: Organization | null;
+  google_id?: string | null;
+  is_new_user?: boolean;
+  is_profile_completed?: boolean;
+  needs_setup?: boolean;
 }
 
 interface FacialConfig {
@@ -188,9 +199,11 @@ class ApiService {
           : rawError
             ? Object.values(rawError).flat(Infinity).join(', ')
             : `Error ${response.status}`;
-        // Use warn for 401 (expected when not logged in), error for other failures
-        if (response.status === 401) {
-          console.warn(`[API 401] ${endpoint} - Unauthenticated`);
+        // Use warn for expected auth/validation responses to avoid intrusive red popups
+        if (response.status === 401 || response.status === 422 || endpoint.startsWith('/facial/')) {
+          if (endpoint !== "/auth/logout" && endpoint !== "/user") {
+            console.warn(`[API ${response.status}] ${endpoint} - ${errorMsg}`);
+          }
         } else {
           console.error(`[API Error] ${errorMsg}`, data);
         }
@@ -282,11 +295,37 @@ class ApiService {
     });
   }
 
+  async setupProfile(data: { password: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) {
+    return this.request<{ user: User; message: string }>("/auth/setup-profile", {
+      method: "POST",
+      body: JSON.stringify({
+        password: data.password,
+        name: data.fullName,
+        age: data.age,
+        sex: data.sex,
+        course: data.course,
+        year_level: data.yearLevel,
+        organization_id: data.organizationId,
+      }),
+    });
+  }
+
+  async updateProfile(data: { name?: string; age?: number; sex?: string; course?: string }) {
+    return this.request<{ user: User; message: string }>("/auth/update-profile", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
   async logout() {
+    if (!this.token) {
+      await this.clearToken();
+      return { data: { message: "Logged out" } };
+    }
     const response = await this.request<{ message: string }>("/auth/logout", {
       method: "POST",
     });
-    this.clearToken();
+    await this.clearToken();
     return response;
   }
 
@@ -525,4 +564,4 @@ class ApiService {
 }
 
 export const api = new ApiService();
-export type { User, Election, Candidate, Vote, Announcement, FacialConfig, FacialVerifyResult, FacialConfigResponse };
+export type { User, Organization, Election, Candidate, Vote, Announcement, FacialConfig, FacialVerifyResult, FacialConfigResponse };

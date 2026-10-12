@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Switch,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, Modal, TextInput, KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/Colors';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, FacialConfig } from '@/services/api';
+import { api, FacialConfig, Organization } from '@/services/api';
 import FaceVerificationModal, { FaceVerificationAction } from '@/components/FaceVerificationModal';
 
 const formatDate = (iso: string | null) => {
@@ -17,6 +18,16 @@ const formatDate = (iso: string | null) => {
     return d.toLocaleDateString(undefined, {
       month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
+  } catch {
+    return '—';
+  }
+};
+
+const formatJoinDate = (iso: string | null | undefined) => {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
   } catch {
     return '—';
   }
@@ -36,13 +47,29 @@ const getStatusLabel = (status: string) => {
     case 'verified': return 'Verified';
     case 'enrolled': return 'Enrolled';
     case 'disabled': return 'Disabled';
-    case 'not_enrolled': return 'Not Set Up';
+    case 'not_enrolled': return 'Not Enrolled';
     default: return 'Unknown';
   }
 };
 
+function InfoRow({ icon, label, value, iconBg, iconColor }: {
+  icon: string; label: string; value: string; iconBg?: string; iconColor?: string;
+}) {
+  return (
+    <View style={styles.infoRow}>
+      <View style={[styles.infoRowIcon, { backgroundColor: iconBg || Colors.primaryBg }]}>
+        <Ionicons name={icon as any} size={16} color={iconColor || Colors.primary} />
+      </View>
+      <View style={styles.infoRowContent}>
+        <Text style={styles.infoRowLabel}>{label}</Text>
+        <Text style={styles.infoRowValue}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function VoterProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateProfile } = useAuth();
   const router = useRouter();
 
   const [facialConfig, setFacialConfig] = useState<FacialConfig | null>(null);
@@ -50,46 +77,139 @@ export default function VoterProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [toggleLoading, setToggleLoading] = useState(false);
-
   const [faceModalVisible, setFaceModalVisible] = useState(false);
   const [faceModalAction, setFaceModalAction] = useState<FaceVerificationAction>('enroll');
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
 
-  const name = user?.name || 'James Lizada';
-  const initials = name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-  const email = user?.email || 'jameslizada@campus.edu.ph';
+  // Edit Profile modal state
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editAge, setEditAge] = useState('');
+  const [editSex, setEditSex] = useState('Male');
+  const [editCourse, setEditCourse] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
-  const mountedRef = React.useRef(true);
+  const name = user?.name || '—';
+  const email = user?.email || '—';
+  const course = user?.course || '—';
+  const yearLevel = user?.year_level || '—';
+  const age = user?.age ? String(user.age) : '—';
+  const sex = user?.sex || '—';
+  const joinedDate = formatJoinDate(user?.created_at);
+
+  // Compute initials from name
+  const initials = useMemo(() => {
+    return name
+      .split(/[\s,]+/)
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'U';
+  }, [name]);
+
+  // Compute real organization name (ensuring NO Org #3 or numeric IDs are displayed)
+  const organizationName = useMemo(() => {
+    if (user?.organization?.name) {
+      return `${user.organization.name}${user.organization.code ? ` (${user.organization.code})` : ''}`;
+    }
+    if (user?.organization_id && organizations.length > 0) {
+      const match = organizations.find((o) => o.id === user.organization_id);
+      if (match) return `${match.name} (${match.code})`;
+    }
+    return user?.organization_id ? 'Assigned Organization' : 'Not assigned';
+  }, [user?.organization, user?.organization_id, organizations]);
+
+  const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
-  const loadFacialConfig = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
-      const response = await api.getFacialConfig();
+      const [facialRes, orgsRes] = await Promise.allSettled([
+        api.getFacialConfig(),
+        api.getOrganizations(),
+      ]);
+
       if (!mountedRef.current) return;
-      if (response.data) {
-        setFacialConfig(response.data.facial_config);
-        setIsRequired(response.data.is_required);
+
+      if (facialRes.status === 'fulfilled' && facialRes.value.data) {
+        setFacialConfig(facialRes.value.data.facial_config);
+        setIsRequired(facialRes.value.data.is_required);
+      }
+
+      if (orgsRes.status === 'fulfilled' && orgsRes.value.data) {
+        setOrganizations(orgsRes.value.data);
       }
     } catch (error) {
-      console.error('Failed to load facial config:', error);
+      console.error('Failed to load profile data:', error);
     }
   }, []);
 
   useEffect(() => {
-    loadFacialConfig().finally(() => {
+    loadData().finally(() => {
       if (mountedRef.current) setLoading(false);
     });
-  }, [loadFacialConfig]);
-
+  }, [loadData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadFacialConfig();
+    await loadData();
     setRefreshing(false);
+  };
+
+  const handleOpenEdit = () => {
+    setEditName(user?.name || '');
+    setEditAge(user?.age ? String(user.age) : '');
+    setEditSex(user?.sex || 'Male');
+    setEditCourse(user?.course || '');
+    setEditError('');
+    setEditModalVisible(true);
+  };
+
+  const handleSaveProfile = async () => {
+    const trimmedName = editName.trim();
+    const trimmedCourse = editCourse.trim();
+    const parsedAge = parseInt(editAge, 10);
+
+    if (!trimmedName) {
+      setEditError('Please enter your full name');
+      return;
+    }
+    if (isNaN(parsedAge) || parsedAge < 15 || parsedAge > 100) {
+      setEditError('Please enter a valid age between 15 and 100');
+      return;
+    }
+    if (!editSex) {
+      setEditError('Please select your sex');
+      return;
+    }
+    if (!trimmedCourse) {
+      setEditError('Please enter your course');
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError('');
+
+    const res = await updateProfile({
+      name: trimmedName,
+      age: parsedAge,
+      sex: editSex,
+      course: trimmedCourse,
+    });
+
+    setEditSaving(false);
+
+    if (res.success) {
+      setEditModalVisible(false);
+      Alert.alert('Profile Updated', 'Your profile details have been saved successfully.');
+    } else {
+      setEditError(res.error || 'Failed to update profile details');
+    }
   };
 
   const handleLogout = async () => {
@@ -116,14 +236,10 @@ export default function VoterProfileScreen() {
 
   const handleToggleEnabled = async (value: boolean) => {
     if (!facialConfig?.is_enrolled) {
-      Alert.alert(
-        'Not Enrolled',
-        'You must enroll your face first before you can enable facial verification.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Enroll Now', onPress: startEnroll },
-        ]
-      );
+      Alert.alert('Not Enrolled', 'You must enroll your face first.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Enroll Now', onPress: startEnroll },
+      ]);
       return;
     }
     setToggleLoading(true);
@@ -139,7 +255,7 @@ export default function VoterProfileScreen() {
   const handleRemove = () => {
     Alert.alert(
       'Remove Facial Profile',
-      'This will permanently remove your enrolled face data. You will need to re-enroll to use facial verification again.',
+      'This will permanently remove your enrolled face data.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -158,117 +274,122 @@ export default function VoterProfileScreen() {
     );
   };
 
-  const handleResetAttempts = () => {
-    Alert.alert('Reset Attempts', 'Reset your failed face verification attempts?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset',
-        onPress: async () => {
-          const res = await api.resetFacialAttempts();
-          if (res.data) {
-            setFacialConfig(res.data.facial_config);
-            Alert.alert('Reset', 'Attempts have been reset.');
-          } else {
-            Alert.alert('Error', res.error || 'Could not reset attempts.');
-          }
-        },
-      },
-    ]);
-  };
-
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.bellBtn}>
-          <Ionicons name="notifications-outline" size={22} color="#fff" />
-          <View style={styles.bellBadge} />
+        <View>
+          <Text style={styles.headerGreeting}>Your Account</Text>
+          <Text style={styles.headerTitle}>My Profile</Text>
+        </View>
+        <TouchableOpacity style={styles.headerEditBtn} onPress={handleOpenEdit} activeOpacity={0.8}>
+          <Ionicons name="create-outline" size={16} color={Colors.primary} />
+          <Text style={styles.headerEditBtnText}>Edit</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.titleRow}>
-        <Text style={styles.pageTitle}>My Profile</Text>
-        <View style={styles.verifiedBadge}>
-          <Text style={styles.verifiedText}>Verified</Text>
+      {/* ── Profile Banner ── */}
+      <View style={styles.bannerCard}>
+        <View style={styles.bannerAvatar}>
+          <Text style={styles.bannerAvatarText}>{initials}</Text>
         </View>
-      </View>
-
-      <View style={styles.infoCardsRow}>
-        <View style={styles.infoCard}>
-          <Ionicons name="school-outline" size={18} color={Colors.primary} style={styles.infoIcon} />
-          <Text style={styles.infoValue}>3rd Year</Text>
-          <Text style={styles.infoLabel}>Year Level</Text>
-        </View>
-        <View style={styles.infoCard}>
-          <Ionicons name="book-outline" size={18} color={Colors.primary} style={styles.infoIcon} />
-          <Text style={styles.infoValue}>BSICT</Text>
-          <Text style={styles.infoLabel}>Course</Text>
-        </View>
-        <View style={styles.infoCard}>
-          <Ionicons name="star-outline" size={18} color={Colors.primary} style={styles.infoIcon} />
-          <Text style={styles.infoValue}>Active</Text>
-          <Text style={styles.infoLabel}>Status</Text>
-        </View>
-      </View>
-
-      <View style={styles.banner}>
-        <View style={styles.bannerInner}>
-          <View style={styles.initialsCircle}>
-            <Text style={styles.initialsText}>{initials}</Text>
+        <Text style={styles.bannerName}>{name}</Text>
+        <Text style={styles.bannerEmail}>{email}</Text>
+        <View style={styles.bannerBadgeRow}>
+          <View style={styles.bannerBadge}>
+            <Ionicons name="checkmark-circle" size={12} color={Colors.success} />
+            <Text style={styles.bannerBadgeText}>Verified Voter</Text>
           </View>
-          <View style={styles.bannerInfo}>
-            <Text style={styles.bannerName}>{name}</Text>
-            <View style={styles.participantBadge}>
-              <Ionicons name="checkmark" size={10} color={Colors.primary} />
-              <Text style={styles.participantText}>Election Participant</Text>
+          {user?.is_profile_completed && (
+            <View style={[styles.bannerBadge, { backgroundColor: '#E8F5E9' }]}>
+              <Ionicons name="person-circle" size={12} color={Colors.primary} />
+              <Text style={[styles.bannerBadgeText, { color: Colors.primary }]}>Profile Complete</Text>
             </View>
-            <Text style={styles.bannerEmail}>{email}</Text>
-          </View>
+          )}
         </View>
+        <TouchableOpacity style={styles.bannerEditBtn} onPress={handleOpenEdit} activeOpacity={0.85}>
+          <Ionicons name="pencil" size={14} color="#fff" />
+          <Text style={styles.bannerEditBtnText}>Edit Profile</Text>
+        </TouchableOpacity>
       </View>
 
+      {/* ── Quick Stats ── */}
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>2</Text>
-          <Text style={styles.statLabel}>Votes Cast</Text>
+          <Ionicons name="school-outline" size={20} color={Colors.primary} style={{ marginBottom: 4 }} />
+          <Text style={styles.statValue} numberOfLines={1}>{yearLevel !== '—' ? yearLevel.replace(' Year', '\nYear') : '—'}</Text>
+          <Text style={styles.statLabel}>Year Level</Text>
         </View>
+        <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>100%</Text>
-          <Text style={styles.statLabel}>Participation</Text>
+          <Ionicons name="person-outline" size={20} color={Colors.primary} style={{ marginBottom: 4 }} />
+          <Text style={styles.statValue}>{age}</Text>
+          <Text style={styles.statLabel}>Age</Text>
         </View>
+        <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>2025</Text>
-          <Text style={styles.statLabel}>Joined</Text>
+          <Ionicons name="male-female-outline" size={20} color={Colors.primary} style={{ marginBottom: 4 }} />
+          <Text style={styles.statValue}>{sex !== '—' ? sex : '—'}</Text>
+          <Text style={styles.statLabel}>Sex</Text>
         </View>
       </View>
 
-      {/* ================ FACIAL VERIFICATION CONFIGURATION SECTION ================ */}
-      <View style={styles.facialSection}>
-        <View style={styles.facialSectionHeader}>
+      {/* ── Student Information ── */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>STUDENT INFORMATION</Text>
+          <TouchableOpacity style={styles.sectionEditLink} onPress={handleOpenEdit}>
+            <Ionicons name="pencil" size={13} color={Colors.primary} />
+            <Text style={styles.sectionEditText}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+        <InfoRow icon="book-outline" label="Course" value={course} />
+        <InfoRow icon="school-outline" label="Year Level" value={yearLevel} iconBg="#EDE7F6" iconColor="#7B1FA2" />
+        <InfoRow
+          icon="business-outline"
+          label="Organization"
+          value={organizationName}
+          iconBg="#FFF3E0"
+          iconColor="#E65100"
+        />
+      </View>
+
+      {/* ── Account Information ── */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>ACCOUNT INFORMATION</Text>
+        <InfoRow icon="mail-outline" label="Email Address" value={email} />
+        <InfoRow icon="calendar-outline" label="Member Since" value={joinedDate} iconBg="#FFF8E1" iconColor="#F57C00" />
+        <InfoRow
+          icon={user?.is_profile_completed ? 'checkmark-circle-outline' : 'alert-circle-outline'}
+          label="Profile Status"
+          value={user?.is_profile_completed ? 'Completed' : 'Incomplete'}
+          iconBg={user?.is_profile_completed ? '#E8F5E9' : '#FFEBEE'}
+          iconColor={user?.is_profile_completed ? Colors.success : Colors.error}
+        />
+        {user?.google_id && (
+          <InfoRow icon="logo-google" label="Login Method" value="Google Account" iconBg="#FCE4EC" iconColor="#E53935" />
+        )}
+      </View>
+
+      {/* ── Facial Verification ── */}
+      <View style={styles.section}>
+        <View style={styles.facialHeader}>
           <View style={styles.facialIconWrap}>
-            <Ionicons name="person-outline" size={22} color="#fff" />
+            <Ionicons name="scan-outline" size={20} color="#fff" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.facialSectionTitle}>Facial Verification</Text>
-            <Text style={styles.facialSectionSubtitle}>
-              Secure your votes with identity confirmation
-            </Text>
+            <Text style={styles.sectionTitleInline}>Facial Verification</Text>
+            <Text style={styles.facialSubtitle}>Biometric security for voting</Text>
           </View>
           {loading ? (
             <ActivityIndicator size="small" color={Colors.primary} />
           ) : (
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor: `${getStatusColor(facialConfig?.status || 'not_enrolled')}20` },
-            ]}>
-              <Text style={[
-                styles.statusBadgeText,
-                { color: getStatusColor(facialConfig?.status || 'not_enrolled') },
-              ]}>
+            <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(facialConfig?.status || 'not_enrolled')}20` }]}>
+              <Text style={[styles.statusBadgeText, { color: getStatusColor(facialConfig?.status || 'not_enrolled') }]}>
                 {getStatusLabel(facialConfig?.status || 'not_enrolled')}
               </Text>
             </View>
@@ -276,243 +397,268 @@ export default function VoterProfileScreen() {
         </View>
 
         {loading ? (
-          <View style={{ padding: 24 }}>
+          <View style={{ padding: 20, alignItems: 'center' }}>
             <ActivityIndicator size="large" color={Colors.primary} />
           </View>
-        ) : (
+        ) : facialConfig ? (
           <>
-            {facialConfig && (
-              <>
-                {/* Security Info Bar */}
-                <View style={styles.securityInfoBar}>
-                  <Ionicons name="shield-checkmark" size={18} color={Colors.primary} />
-                  <Text style={styles.securityInfoText}>
-                    {isRequired
-                      ? 'Required — Face verification is mandatory for voting.'
-                      : 'Optional — You may toggle face verification for voting.'}
-                  </Text>
+            <View style={styles.securityBar}>
+              <Ionicons name="shield-checkmark" size={16} color={Colors.primary} />
+              <Text style={styles.securityBarText}>
+                {isRequired
+                  ? 'Required — Face scan is mandatory for voting.'
+                  : 'Optional — Toggle face scan for voting.'}
+              </Text>
+            </View>
+
+            <View style={styles.configGrid}>
+              {[
+                { label: 'Enrolled', value: facialConfig.is_enrolled ? 'Yes' : 'No', color: facialConfig.is_enrolled ? Colors.success : Colors.textMuted, icon: facialConfig.is_enrolled ? 'checkmark-done-circle' : 'help-circle-outline' },
+                { label: 'Enabled', value: facialConfig.is_enabled ? 'On' : 'Off', color: facialConfig.is_enabled ? Colors.primary : Colors.textMuted, icon: facialConfig.is_enabled ? 'toggle' : 'toggle-outline' },
+                { label: 'Verified', value: facialConfig.is_verified ? 'Yes' : 'No', color: facialConfig.is_verified ? Colors.success : Colors.textMuted, icon: facialConfig.is_verified ? 'ribbon-outline' : 'time-outline' },
+              ].map((item) => (
+                <View key={item.label} style={styles.configCell}>
+                  <Ionicons name={item.icon as any} size={18} color={item.color} />
+                  <Text style={styles.configLabel}>{item.label}</Text>
+                  <Text style={[styles.configValue, { color: item.color }]}>{item.value}</Text>
                 </View>
+              ))}
+            </View>
 
-                {/* Config Info Grid */}
-                <View style={styles.configGrid}>
-                  <View style={styles.configCell}>
-                    <Ionicons
-                      name={facialConfig.is_enrolled ? 'checkmark-done-circle' : 'help-circle-outline'}
-                      size={18}
-                      color={facialConfig.is_enrolled ? Colors.success : Colors.textMuted}
-                    />
-                    <Text style={styles.configLabel}>Enrolled</Text>
-                    <Text style={[
-                      styles.configValue,
-                      { color: facialConfig.is_enrolled ? Colors.success : Colors.textMuted },
-                    ]}>
-                      {facialConfig.is_enrolled ? 'Yes' : 'No'}
-                    </Text>
-                  </View>
-                  <View style={styles.configCell}>
-                    <Ionicons
-                      name={facialConfig.is_enabled ? 'toggle' : 'toggle-outline'}
-                      size={18}
-                      color={facialConfig.is_enabled ? Colors.primary : Colors.textMuted}
-                    />
-                    <Text style={styles.configLabel}>Enabled</Text>
-                    <Text style={[
-                      styles.configValue,
-                      { color: facialConfig.is_enabled ? Colors.primary : Colors.textMuted },
-                    ]}>
-                      {facialConfig.is_enabled ? 'On' : 'Off'}
-                    </Text>
-                  </View>
-                  <View style={styles.configCell}>
-                    <Ionicons name="reload-circle-outline" size={18} color={Colors.warning} />
-                    <Text style={styles.configLabel}>Attempts</Text>
-                    <Text style={[
-                      styles.configValue,
-                      { color: facialConfig.verification_attempts >= 4 ? Colors.error : Colors.warning },
-                    ]}>
-                      {facialConfig.verification_attempts}/5
-                    </Text>
-                  </View>
-                  <View style={styles.configCell}>
-                    <Ionicons
-                      name={facialConfig.is_verified ? 'ribbon-outline' : 'time-outline'}
-                      size={18}
-                      color={facialConfig.is_verified ? Colors.success : Colors.primary}
-                    />
-                    <Text style={styles.configLabel}>Verified</Text>
-                    <Text style={[
-                      styles.configValue,
-                      { color: facialConfig.is_verified ? Colors.success : Colors.textMuted },
-                    ]}>
-                      {facialConfig.is_verified ? 'Yes' : 'No'}
-                    </Text>
-                  </View>
+            {/* Timeline rows */}
+            <View style={styles.detailRows}>
+              <InfoRow icon="checkmark-done-circle-outline" label="Last Verified" value={formatDate(facialConfig.last_verified_at)} />
+              <InfoRow icon="close-circle-outline" label="Last Failed" value={formatDate(facialConfig.last_failed_at)} iconBg="#FFEBEE" iconColor={Colors.error} />
+            </View>
+
+            {/* Toggle switch (when optional) */}
+            {!isRequired && facialConfig.is_enrolled && (
+              <View style={styles.toggleRow}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.text }}>Enable for Voting</Text>
+                  <Text style={styles.toggleHint}>Require face verification before casting ballots.</Text>
                 </View>
-
-                {/* Detail Rows */}
-                <View style={styles.detailRows}>
-                  <View style={styles.detailRow}>
-                    <View style={styles.detailRowIcon}>
-                      <Ionicons name="checkmark-done-circle-outline" size={16} color={Colors.primary} />
-                    </View>
-                    <View style={styles.detailRowContent}>
-                      <Text style={styles.detailRowLabel}>Last Verified</Text>
-                      <Text style={styles.detailRowValue}>
-                        {formatDate(facialConfig.last_verified_at)}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <View style={[styles.detailRowIcon, { backgroundColor: '#FFEBEE' }]}>
-                      <Ionicons name="close-circle-outline" size={16} color={Colors.error} />
-                    </View>
-                    <View style={styles.detailRowContent}>
-                      <Text style={styles.detailRowLabel}>Last Failed Attempt</Text>
-                      <Text style={styles.detailRowValue}>
-                        {formatDate(facialConfig.last_failed_at)}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <View style={[styles.detailRowIcon, { backgroundColor: Colors.primaryBg }]}>
-                      <Ionicons name="create-outline" size={16} color={Colors.primary} />
-                    </View>
-                    <View style={styles.detailRowContent}>
-                      <Text style={styles.detailRowLabel}>Last Updated</Text>
-                      <Text style={styles.detailRowValue}>
-                        {formatDate(facialConfig.updated_at)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Enable/Disable Toggle Row */}
-                  <View style={[styles.detailRow, styles.toggleRow]}>
-                    <View style={[styles.detailRowIcon, { backgroundColor: '#EDE7F6' }]}>
-                      <Ionicons
-                        name={facialConfig.is_enabled ? 'eye-outline' : 'eye-off-outline'}
-                        size={16}
-                        color={Colors.purple}
-                      />
-                    </View>
-                    <View style={styles.detailRowContent}>
-                      <Text style={styles.detailRowLabel}>Require Before Voting</Text>
-                      <Text style={styles.detailRowHint}>
-                        {facialConfig.is_enabled
-                          ? 'Face ID will be required before submitting each vote.'
-                          : 'Your account is enrolled but verification is skipped.'}
-                      </Text>
-                    </View>
-                    {toggleLoading ? (
-                      <ActivityIndicator size="small" color={Colors.primary} />
-                    ) : (
-                      <Switch
-                        value={facialConfig.is_enabled}
-                        onValueChange={handleToggleEnabled}
-                        trackColor={{ true: Colors.primary, false: '#ccd5df' }}
-                        thumbColor="#fff"
-                      />
-                    )}
-                  </View>
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.actionRow}>
-                  {!facialConfig.is_enrolled ? (
-                    <TouchableOpacity style={styles.primaryAction} onPress={startEnroll}>
-                      <Ionicons name="person-add-outline" size={18} color="#fff" />
-                      <Text style={styles.primaryActionText}>Enroll Face Now</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <>
-                      <TouchableOpacity style={styles.secondaryAction} onPress={startVerify}>
-                        <Ionicons name="shield-checkmark-outline" size={18} color={Colors.primary} />
-                        <Text style={styles.secondaryActionText}>Test Verify</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.primaryAction} onPress={startEnroll}>
-                        <Ionicons name="refresh-outline" size={18} color="#fff" />
-                        <Text style={styles.primaryActionText}>Re-Enroll Face</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-
-                <View style={styles.secondaryActionRow}>
-                  {facialConfig.verification_attempts >= 3 && (
-                    <TouchableOpacity style={styles.textBtn} onPress={handleResetAttempts}>
-                      <Ionicons name="refresh-circle" size={16} color={Colors.warning} />
-                      <Text style={[styles.textBtnText, { color: Colors.warning }]}>Reset Attempts</Text>
-                    </TouchableOpacity>
-                  )}
-                  {facialConfig.is_enrolled && (
-                    <TouchableOpacity style={styles.textBtn} onPress={handleRemove}>
-                      <Ionicons name="trash-outline" size={16} color={Colors.error} />
-                      <Text style={[styles.textBtnText, { color: Colors.error }]}>Remove Face Data</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {!facialConfig.is_enrolled && (
-                  <View style={styles.setupNotice}>
-                    <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
-                    <Text style={styles.setupNoticeText}>
-                      Enrolling your face will allow you to verify your identity quickly using just
-                      your camera before casting votes. Your data is stored securely.
-                    </Text>
-                  </View>
+                {toggleLoading ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Switch
+                    value={facialConfig.is_enabled}
+                    onValueChange={handleToggleEnabled}
+                    trackColor={{ false: '#CFD8DC', true: `${Colors.primary}80` }}
+                    thumbColor={facialConfig.is_enabled ? Colors.primary : '#90A4AE'}
+                  />
                 )}
-              </>
+              </View>
             )}
+
+            {/* Action buttons */}
+            <View style={styles.actionRow}>
+              {!facialConfig.is_enrolled ? (
+                <TouchableOpacity style={styles.primaryAction} onPress={startEnroll}>
+                  <Ionicons name="camera-outline" size={18} color="#fff" />
+                  <Text style={styles.primaryActionText}>Enroll Facial Profile</Text>
+                </TouchableOpacity>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.secondaryAction} onPress={startVerify}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color={Colors.primary} />
+                    <Text style={styles.secondaryActionText}>Test Verify</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.primaryAction} onPress={startEnroll}>
+                    <Ionicons name="refresh-outline" size={18} color="#fff" />
+                    <Text style={styles.primaryActionText}>Re-Enroll</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
+            <View style={styles.dangerRow}>
+              {facialConfig.is_enrolled && (
+                <TouchableOpacity style={styles.textBtn} onPress={handleRemove}>
+                  <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                  <Text style={[styles.textBtnText, { color: Colors.error }]}>Remove Face Data</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </>
+        ) : (
+          <View style={styles.noFacialNotice}>
+            <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
+            <Text style={styles.noFacialText}>
+              Enroll your face to enable biometric verification before casting votes.
+            </Text>
+          </View>
         )}
       </View>
 
-      {/* Account Information */}
-      <View style={styles.accountSection}>
-        <Text style={styles.accountTitle}>ACCOUNT INFORMATION</Text>
-
-        <View style={styles.accountItem}>
-          <View style={styles.accountIconWrap}>
-            <Ionicons name="mail-outline" size={16} color={Colors.primary} />
-          </View>
-          <View style={styles.accountInfo}>
-            <Text style={styles.accountLabel}>Email Address</Text>
-            <Text style={styles.accountValue}>{email}</Text>
-          </View>
-        </View>
-
-        <View style={styles.accountItem}>
-          <View style={[styles.accountIconWrap, { backgroundColor: '#F3E5F5' }]}>
-            <Text style={[styles.accountIconText, { color: '#8E24AA' }]}>ID</Text>
-          </View>
-          <View style={styles.accountInfo}>
-            <Text style={styles.accountLabel}>Student ID</Text>
-            <Text style={styles.accountValue}>2024-0042</Text>
-          </View>
-        </View>
-
-        <View style={styles.accountItem}>
-          <View style={[styles.accountIconWrap, { backgroundColor: '#FFF3E0' }]}>
-            <Ionicons name="calendar-outline" size={16} color="#F57C00" />
-          </View>
-          <View style={styles.accountInfo}>
-            <Text style={styles.accountLabel}>Member Since</Text>
-            <Text style={styles.accountValue}>January 15, 2025</Text>
-          </View>
-        </View>
-      </View>
-
-      <TouchableOpacity style={styles.logoutBtn} onPress={confirmLogout}>
-        <Ionicons name="log-out-outline" size={18} color="#fff" style={{ marginRight: 6 }} />
-        <Text style={styles.logoutBtnText}>Logout</Text>
+      {/* ── Logout ── */}
+      <TouchableOpacity style={styles.logoutBtn} onPress={confirmLogout} activeOpacity={0.85}>
+        <Ionicons name="log-out-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+        <Text style={styles.logoutBtnText}>Log Out</Text>
       </TouchableOpacity>
 
+      {/* ── Edit Profile Modal ── */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => { if (!editSaving) setEditModalVisible(false); }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Edit Profile</Text>
+                <Text style={styles.modalSubtitle}>Update your personal information</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setEditModalVisible(false)}
+                disabled={editSaving}
+              >
+                <Ionicons name="close" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.modalScroll}>
+              {/* Error Message */}
+              {editError ? (
+                <View style={styles.modalErrorBox}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.error} />
+                  <Text style={styles.modalErrorText}>{editError}</Text>
+                </View>
+              ) : null}
+
+              {/* Full Name */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Full Name *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editName}
+                  onChangeText={setEditName}
+                  placeholder="(Dela Cruz, Juan J.)"
+                  placeholderTextColor={Colors.textMuted}
+                  editable={!editSaving}
+                />
+                <Text style={styles.inputHelp}>Format: Dela Cruz, Juan J.</Text>
+              </View>
+
+              {/* Age */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Age *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editAge}
+                  onChangeText={setEditAge}
+                  placeholder="e.g. 20"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="numeric"
+                  maxLength={3}
+                  editable={!editSaving}
+                />
+              </View>
+
+              {/* Sex */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Sex *</Text>
+                <View style={styles.sexOptionsRow}>
+                  {['Male', 'Female', 'Other'].map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[
+                        styles.sexOptionBtn,
+                        editSex === option && styles.sexOptionBtnActive,
+                      ]}
+                      onPress={() => setEditSex(option)}
+                      disabled={editSaving}
+                    >
+                      <Ionicons
+                        name={
+                          option === 'Male'
+                            ? 'male'
+                            : option === 'Female'
+                            ? 'female'
+                            : 'person'
+                        }
+                        size={16}
+                        color={editSex === option ? '#fff' : Colors.text}
+                      />
+                      <Text
+                        style={[
+                          styles.sexOptionText,
+                          editSex === option && styles.sexOptionTextActive,
+                        ]}
+                      >
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Course */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Course *</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={editCourse}
+                  onChangeText={setEditCourse}
+                  placeholder="e.g. BS Information Technology"
+                  placeholderTextColor={Colors.textMuted}
+                  editable={!editSaving}
+                />
+              </View>
+
+              {/* Locked Notice */}
+              <View style={styles.lockedNotice}>
+                <Ionicons name="lock-closed" size={16} color="#8899aa" />
+                <Text style={styles.lockedNoticeText}>
+                  Year Level and Organization are restricted and can only be modified by an administrator.
+                </Text>
+              </View>
+            </ScrollView>
+
+            {/* Modal Actions */}
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setEditModalVisible(false)}
+                disabled={editSaving}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, editSaving && styles.modalSaveBtnDisabled]}
+                onPress={handleSaveProfile}
+                disabled={editSaving}
+              >
+                {editSaving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Text style={styles.modalSaveText}>Save Changes</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Face Verification Modal */}
       <FaceVerificationModal
         visible={faceModalVisible}
         onClose={() => setFaceModalVisible(false)}
         action={faceModalAction}
         context="profile"
-        onSuccess={(result) => {
-          setFacialConfig(result.facial_config);
+        onSuccess={() => {
+          setFaceModalVisible(false);
+          loadData();
         }}
       />
     </ScrollView>
@@ -520,395 +666,430 @@ export default function VoterProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F7FA' },
-  content: { paddingBottom: 32 },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  content: { paddingBottom: 40 },
 
+  // Header
   header: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
-  bellBtn: { position: 'relative', padding: 4 },
-  bellBadge: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
-
-  titleRow: {
+  headerGreeting: { fontSize: 13, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  headerTitle: { fontSize: 26, fontWeight: '800', color: Colors.text, marginTop: 2 },
+  headerEditBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
-    marginHorizontal: 20,
-    marginBottom: 14,
-    gap: 10,
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
   },
-  pageTitle: { fontSize: 22, fontWeight: '800', color: '#1a2a3a' },
-  verifiedBadge: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+  headerEditBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
   },
-  verifiedText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 
-  infoCardsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  infoCard: {
-    flex: 1,
+  // Banner
+  bannerCard: {
     backgroundColor: '#fff',
-    borderRadius: 14,
+    borderRadius: 20,
+    padding: 24,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#EFF2F7',
+  },
+  bannerAvatar: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  bannerAvatarText: { color: '#fff', fontSize: 26, fontWeight: '800' },
+  bannerName: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center', marginBottom: 4 },
+  bannerEmail: { fontSize: 13, color: Colors.textMuted, marginBottom: 12 },
+  bannerBadgeRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'center' },
+  bannerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  bannerBadgeText: { fontSize: 11, fontWeight: '700', color: Colors.success },
+  bannerEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 20,
+    marginTop: 14,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  bannerEditBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Stats Row
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
     paddingVertical: 14,
     paddingHorizontal: 8,
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  infoIcon: { marginBottom: 6 },
-  infoValue: { fontSize: 14, fontWeight: '800', color: Colors.primary, marginBottom: 2 },
-  infoLabel: { fontSize: 10, color: '#8899aa', fontWeight: '600' },
-
-  banner: {
-    backgroundColor: Colors.primary,
-    borderRadius: 20,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    paddingHorizontal: 20,
-    paddingTop: 28,
-    paddingBottom: 20,
-    overflow: 'visible',
-  },
-  bannerInner: { flexDirection: 'row', alignItems: 'center' },
-  initialsCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
     shadowRadius: 6,
-    elevation: 4,
-  },
-  initialsText: { fontSize: 24, fontWeight: '800', color: Colors.primary },
-  bannerInfo: { flex: 1 },
-  bannerName: { fontSize: 16, fontWeight: '700', color: '#fff', marginBottom: 6 },
-  participantBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#E8F5E9',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    gap: 4,
-    marginBottom: 6,
-  },
-  participantText: { fontSize: 10, fontWeight: '700', color: Colors.primary },
-  bannerEmail: { fontSize: 12, color: 'rgba(255,255,255,0.85)' },
-
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: '#EFF2F7',
   },
-  statItem: { alignItems: 'center' },
-  statValue: { fontSize: 18, fontWeight: '800', color: '#1a2a3a', marginBottom: 2 },
-  statLabel: { fontSize: 11, color: '#8899aa', fontWeight: '600' },
+  statItem: { flex: 1, alignItems: 'center' },
+  statValue: { fontSize: 14, fontWeight: '800', color: Colors.text, textAlign: 'center', minHeight: 18 },
+  statLabel: { fontSize: 11, color: Colors.textMuted, marginTop: 2, fontWeight: '600' },
+  statDivider: { width: 1, height: 36, backgroundColor: '#EFF2F7' },
 
-  /* =================== FACIAL SECTION STYLES =================== */
-  facialSection: {
-    marginHorizontal: 20,
-    marginBottom: 20,
+  // Sections
+  section: {
     backgroundColor: '#fff',
     borderRadius: 18,
     padding: 18,
+    marginHorizontal: 16,
+    marginBottom: 14,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
     shadowRadius: 6,
-    elevation: 3,
+    elevation: 2,
     borderWidth: 1,
-    borderColor: '#EAF1EA',
+    borderColor: '#EFF2F7',
   },
-  facialSectionHeader: {
+  sectionHeaderRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
+    marginBottom: 12,
   },
-  facialIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  facialSectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1a2a3a',
-  },
-  facialSectionSubtitle: {
-    fontSize: 12,
-    color: '#8899aa',
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-  },
-  statusBadgeText: {
+  sectionTitle: {
     fontSize: 11,
     fontWeight: '800',
-  },
-
-  securityInfoBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primaryBg,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 14,
-  },
-  securityInfoText: {
-    marginLeft: 8,
-    fontSize: 12,
-    color: Colors.primary,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 16,
-  },
-
-  configGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 16,
-  },
-  configCell: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#F8FAFB',
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#EFF2F5',
-  },
-  configLabel: {
-    fontSize: 10,
     color: '#8899aa',
-    fontWeight: '700',
-    marginTop: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
-  configValue: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-
-  detailRows: {
-    marginBottom: 16,
-  },
-  detailRow: {
+  sectionEditLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F2F5',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
   },
-  detailRowIcon: {
-    width: 32,
-    height: 32,
+  sectionEditText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  sectionTitleInline: { fontSize: 15, fontWeight: '800', color: Colors.text },
+
+  // Info Row
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F7FA',
+  },
+  infoRowIcon: {
+    width: 34,
+    height: 34,
     borderRadius: 10,
-    backgroundColor: Colors.primaryBg,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  detailRowContent: {
-    flex: 1,
-  },
-  detailRowLabel: {
-    fontSize: 11,
-    color: '#8899aa',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  detailRowValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1a2a3a',
-    marginTop: 2,
-  },
-  detailRowHint: {
-    fontSize: 11,
-    color: '#8899aa',
-    marginTop: 2,
-    lineHeight: 14,
-  },
-  toggleRow: {
-    borderBottomWidth: 0,
-  },
+  infoRowContent: { flex: 1 },
+  infoRowLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
+  infoRowValue: { fontSize: 14, fontWeight: '700', color: Colors.text, marginTop: 1 },
 
-  actionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-  },
-  primaryAction: {
-    flex: 1,
-    height: 48,
-    backgroundColor: Colors.primary,
+  // Facial Verification Section
+  facialHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  facialIconWrap: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 12,
+  },
+  facialSubtitle: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  statusBadgeText: { fontSize: 11, fontWeight: '800' },
+
+  securityBar: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  securityBarText: { fontSize: 12, color: Colors.primary, fontWeight: '600', flex: 1 },
+
+  configGrid: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  configCell: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  configLabel: { fontSize: 10, color: Colors.textMuted, fontWeight: '600', marginTop: 4 },
+  configValue: { fontSize: 13, fontWeight: '800', marginTop: 2 },
+
+  detailRows: { marginBottom: 4 },
+
+  toggleRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1, borderTopColor: '#F3F5F8',
+    marginBottom: 12,
+  },
+  toggleHint: { fontSize: 11, color: '#8899aa', marginTop: 2, lineHeight: 14 },
+
+  actionRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  primaryAction: {
+    flex: 1, height: 46, backgroundColor: Colors.primary,
+    borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 6,
+  },
+  primaryActionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  secondaryAction: {
+    height: 46, paddingHorizontal: 14,
+    backgroundColor: '#fff',
+    borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 6,
+    borderWidth: 1.5, borderColor: Colors.primary,
+  },
+  secondaryActionText: { color: Colors.primary, fontSize: 14, fontWeight: '700' },
+
+  dangerRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 14 },
+  textBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 4 },
+  textBtnText: { fontSize: 12, fontWeight: '700' },
+
+  noFacialNotice: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    backgroundColor: '#F0F7FF', borderRadius: 10, padding: 12,
+  },
+  noFacialText: {
+    flex: 1, marginLeft: 8, fontSize: 12, color: '#1565C0',
+    lineHeight: 17, fontWeight: '500',
+  },
+
+  // Logout
+  logoutBtn: {
+    backgroundColor: '#EF5350',
+    borderRadius: 14, height: 50,
+    flexDirection: 'row',
+    justifyContent: 'center', alignItems: 'center',
+    marginHorizontal: 16, marginBottom: 8,
+    shadowColor: '#EF5350',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 5,
+  },
+  logoutBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Edit Profile Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.text },
+  modalSubtitle: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
+  modalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalScroll: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  modalErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEE2E2',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  modalErrorText: { fontSize: 13, color: Colors.error, fontWeight: '600', flex: 1 },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 6,
+  },
+  textInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    color: Colors.text,
+  },
+  inputHelp: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 4,
+  },
+  sexOptionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sexOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  sexOptionBtnActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  sexOptionText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  sexOptionTextActive: {
+    color: '#fff',
+  },
+  lockedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F1F5F9',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  lockedNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 16,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  modalSaveBtn: {
+    flex: 2,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
   },
-  primaryActionText: {
+  modalSaveBtnDisabled: {
+    opacity: 0.6,
+  },
+  modalSaveText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '700',
   },
-  secondaryAction: {
-    height: 48,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
-  },
-  secondaryActionText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-
-  secondaryActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 16,
-    marginBottom: 6,
-  },
-  textBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    gap: 4,
-  },
-  textBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  setupNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 8,
-    backgroundColor: '#F0F7FF',
-    borderRadius: 10,
-    padding: 12,
-  },
-  setupNoticeText: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 12,
-    color: '#1565C0',
-    lineHeight: 17,
-    fontWeight: '500',
-  },
-
-  /* ============================================================ */
-
-  accountSection: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginHorizontal: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  accountTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#99aabb',
-    letterSpacing: 1,
-    marginBottom: 12,
-  },
-  accountItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F2F5',
-  },
-  accountIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#E8F5E9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  accountIconText: { fontSize: 10, fontWeight: '800' },
-  accountInfo: { flex: 1 },
-  accountLabel: { fontSize: 12, color: '#99aabb', marginBottom: 2 },
-  accountValue: { fontSize: 14, fontWeight: '700', color: '#1a2a3a' },
-
-  logoutBtn: {
-    backgroundColor: '#f44336',
-    borderRadius: 14,
-    paddingVertical: 7,
-    alignItems: 'center',
-    marginHorizontal: 120,
-  },
-  logoutBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

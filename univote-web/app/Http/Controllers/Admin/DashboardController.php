@@ -89,6 +89,71 @@ class DashboardController extends Controller
             ]);
         }
 
+        // --- Election Polls for active elections ---
+        $activeElectionModels = Election::where('status', 'active')
+            ->with([
+                'organization',
+                'positions' => function ($q) {
+                    $q->orderBy('order')->orderBy('id');
+                },
+                'positions.candidates' => function ($q) {
+                    $q->withCount('votes');
+                },
+            ])
+            ->withCount('votes')
+            ->get();
+
+        $electionPolls = $activeElectionModels->map(function ($election) {
+            $positions = $election->positions->map(function ($position) {
+                $candidates = $position->candidates->sortByDesc('votes_count');
+                $totalPositionVotes = $candidates->sum('votes_count');
+                $maxVotes = $candidates->max('votes_count') ?? 0;
+
+                $rank = 0;
+                $rankedCandidates = $candidates->map(function ($candidate) use ($totalPositionVotes, $maxVotes, &$rank) {
+                    $rank++;
+                    $voteCount = (int) $candidate->votes_count;
+                    $percentage = $totalPositionVotes > 0 ? round(($voteCount / $totalPositionVotes) * 100, 1) : 0;
+
+                    return [
+                        'id'          => $candidate->id,
+                        'name'        => $candidate->name,
+                        'description' => $candidate->description ?? '',
+                        'photo'       => $candidate->photo ? asset('storage/' . $candidate->photo) : null,
+                        'vote_count'  => $voteCount,
+                        'percentage'  => $percentage,
+                        'rank'        => $rank,
+                        'is_leading'  => $voteCount > 0 && $voteCount === $maxVotes,
+                    ];
+                })->values();
+
+                return [
+                    'id'           => $position->id,
+                    'name'         => $position->name,
+                    'total_votes'  => (int) $totalPositionVotes,
+                    'candidates'   => $rankedCandidates,
+                ];
+            })->values();
+
+            $org = $election->organization;
+
+            return [
+                'id'           => $election->id,
+                'title'        => $election->title,
+                'description'  => $election->description ?? '',
+                'status'       => $election->status,
+                'total_votes'  => (int) $election->votes_count,
+                'start_date'   => $election->start_date,
+                'end_date'     => $election->end_date,
+                'organization' => $org ? [
+                    'id'   => $org->id,
+                    'name' => $org->name,
+                    'code' => $org->code ?? $org->name,
+                ] : null,
+                'positions'    => $positions,
+            ];
+        });
+
         return response()->json([
             'stats' => [
                 'total_elections' => $totalElections,
@@ -97,6 +162,7 @@ class DashboardController extends Controller
                 'total_votes' => $totalVotes,
             ],
             'organization_stats' => $organizationStats->values(),
+            'election_polls'     => $electionPolls->values(),
         ]);
     }
 }

@@ -104,14 +104,33 @@
             <p>Loading announcements...</p>
         </div>
 
-        <!-- Announcements List -->
-        <div v-else-if="announcements.length > 0" class="announcements-grid">
-            <div
-                v-for="announcement in announcements"
-                :key="announcement.id"
-                class="announcement-card"
-                :class="[`type-${announcement.type || 'info'}`]"
-            >
+        <!-- Announcements Toolbar & List -->
+        <div v-else-if="announcements.length > 0">
+            <!-- Filter by Organization Bar -->
+            <div class="filter-toolbar">
+                <div class="filter-group">
+                    <label class="filter-label">Filter by Audience:</label>
+                    <select v-model="selectedOrgFilter" class="form-select filter-select">
+                        <option value="all">All Announcements ({{ announcements.length }})</option>
+                        <option value="global">Global Only (All Orgs)</option>
+                        <option v-for="org in availableOrgs" :key="org.id" :value="org.id">
+                            {{ org.name }} ({{ org.code }})
+                        </option>
+                    </select>
+                </div>
+                <div class="filter-counter">
+                    Showing <strong>{{ filteredAnnouncements.length }}</strong> of {{ announcements.length }} announcements
+                </div>
+            </div>
+
+            <!-- Announcements Grid -->
+            <div v-if="filteredAnnouncements.length > 0" class="announcements-grid">
+                <div
+                    v-for="announcement in filteredAnnouncements"
+                    :key="announcement.id"
+                    class="announcement-card"
+                    :class="[`type-${announcement.type || 'info'}`]"
+                >
                 <!-- Target Badge -->
                 <div class="announcement-target">
                     <span v-if="announcement.organization" class="badge badge-org">
@@ -171,6 +190,18 @@
                     </div>
                 </div>
             </div>
+            </div>
+
+            <!-- Filter Empty State -->
+            <div v-else class="empty-state">
+                <div class="empty-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3Z" />
+                    </svg>
+                </div>
+                <h3>No Announcements Found</h3>
+                <p>No announcements posted for this audience filter.</p>
+            </div>
         </div>
 
         <div v-else class="empty-state">
@@ -212,11 +243,21 @@ export default {
             loading: false,
             deletingId: null,
             submitting: false,
+            selectedOrgFilter: "all",
         };
     },
     computed: {
         announcements() {
             return this.electionStore.announcements;
+        },
+        filteredAnnouncements() {
+            if (!this.selectedOrgFilter || this.selectedOrgFilter === "all") {
+                return this.announcements;
+            }
+            if (this.selectedOrgFilter === "global") {
+                return this.announcements.filter(a => !a.organization_id);
+            }
+            return this.announcements.filter(a => Number(a.organization_id) === Number(this.selectedOrgFilter));
         },
         availableOrgs() {
             return this.electionStore.announcementOrganizations || [];
@@ -698,4 +739,44 @@ export default {
 .empty-icon svg { width: 64px; height: 64px; margin: 0 auto; }
 .empty-state h3 { font-size: 20px; font-weight: 700; color: #334155; margin: 0 0 8px; }
 .empty-state p { color: #64748b; font-size: 14px; margin: 0; }
+
+/* ==================== Filter Toolbar ==================== */
+.filter-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #ffffff;
+    padding: 14px 20px;
+    border-radius: 14px;
+    margin-bottom: 20px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.filter-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #475569;
+}
+.filter-select {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    font-size: 13px;
+    background-color: #f8fafc;
+    min-width: 220px;
+}
+.filter-counter {
+    font-size: 13px;
+    color: #64748b;
+}
+.filter-counter strong {
+    color: #0f172a;
+}
 </style>

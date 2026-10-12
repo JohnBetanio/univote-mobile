@@ -109,11 +109,30 @@ class AnnouncementController extends Controller
         ]);
 
         $announcement->update($validated);
+        $announcement->load(['organization', 'admin']);
 
         return response()->json([
             'success' => true,
             'message' => 'Announcement updated successfully!',
-            'announcement' => $announcement,
+            'announcement' => [
+                'id' => $announcement->id,
+                'title' => $announcement->title,
+                'content' => $announcement->content,
+                'type' => $announcement->type,
+                'organization_id' => $announcement->organization_id,
+                'organization' => $announcement->organization ? [
+                    'id' => $announcement->organization->id,
+                    'name' => $announcement->organization->name,
+                    'code' => $announcement->organization->code,
+                ] : null,
+                'admin_id' => $announcement->admin_id,
+                'admin' => $announcement->admin ? [
+                    'id' => $announcement->admin->id,
+                    'name' => $announcement->admin->name,
+                ] : null,
+                'created_at' => $announcement->created_at,
+                'updated_at' => $announcement->updated_at,
+            ],
         ]);
     }
 

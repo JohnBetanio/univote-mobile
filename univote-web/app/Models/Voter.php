@@ -25,6 +25,7 @@ class Voter extends Authenticatable
         'student_id',
         'avatar',
         'is_verified',
+        'is_profile_completed',
     ];
 
     protected $hidden = [
@@ -34,6 +35,7 @@ class Voter extends Authenticatable
 
     protected $casts = [
         'is_verified' => 'boolean',
+        'is_profile_completed' => 'boolean',
         'password' => 'hashed',
     ];
 
@@ -82,5 +84,10 @@ class Voter extends Authenticatable
             return true;
         }
         return $profile->is_enabled;
+    }
+
+    public function needsProfileSetup(): bool
+    {
+        return !$this->is_profile_completed || !$this->organization_id || !($this->facial_config['is_enrolled'] ?? false);
     }
 }

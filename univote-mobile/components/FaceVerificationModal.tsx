@@ -255,8 +255,8 @@ export default function FaceVerificationModal({
           onCancel={handleClose}
           instruction={
             action === 'verify'
-              ? 'Please look straight into the camera to verify your identity.'
-              : 'Fit your full face inside the oval frame without blur or obstruction.'
+              ? 'Please look straight into the camera to verify your face.'
+              : 'Fit your face inside the oval frame (only your face is scanned).'
           }
         />
       ) : (
@@ -294,15 +294,15 @@ export default function FaceVerificationModal({
                 <View style={styles.infoCard}>
                   <View style={styles.infoRow}>
                     <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />
-                    <Text style={styles.infoText}>Full face must be inside the oval frame</Text>
+                    <Text style={styles.infoText}>Only your face is scanned (body & clothes excluded)</Text>
                   </View>
                   <View style={styles.infoRow}>
                     <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />
-                    <Text style={styles.infoText}>Hold steady to avoid blur and ensure good lighting</Text>
+                    <Text style={styles.infoText}>Works in different locations and lighting conditions</Text>
                   </View>
                   <View style={styles.infoRow}>
                     <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />
-                    <Text style={styles.infoText}>Voting requires matching your registered face</Text>
+                    <Text style={styles.infoText}>Hold phone steady and look straight at the camera</Text>
                   </View>
                 </View>
 
@@ -323,11 +323,8 @@ export default function FaceVerificationModal({
               <View style={styles.statusCenter}>
                 <ActivityIndicator size="large" color={Colors.primary} />
                 <Text style={styles.statusText}>
-                  {action === 'verify' ? 'Verifying facial similarity...' : 'Analyzing face quality...'}
+                  {action === 'verify' ? 'Verifying facial features...' : 'Analyzing face quality...'}
                 </Text>
-                {matchScore !== null && (
-                  <Text style={styles.subText}>Match: {Math.round(matchScore * 100)}%</Text>
-                )}
               </View>
             )}
 
@@ -344,11 +341,6 @@ export default function FaceVerificationModal({
                     ? 'Your face matched the registered profile. You can now cast your vote.'
                     : 'Your facial profile has been saved successfully.'}
                 </Text>
-                {matchScore !== null && (
-                  <View style={styles.scorePill}>
-                    <Text style={styles.scoreText}>Match: {Math.round(matchScore * 100)}%</Text>
-                  </View>
-                )}
               </View>
             )}
 
@@ -361,60 +353,19 @@ export default function FaceVerificationModal({
                   {action === 'verify' ? 'Verification Failed' : 'Enrollment Rejected'}
                 </Text>
 
-                {matchScore !== null && (
-                  <View style={styles.scorePill}>
-                    <Text style={styles.scoreText}>Match: {Math.round(matchScore * 100)}%</Text>
-                  </View>
-                )}
-
                 {renderErrorGuidance()}
 
                 <View style={styles.errorCard}>
                   <Text style={styles.errorText}>{error || 'Please try again.'}</Text>
-                  {qualityDetail && (qualityDetail.brightness !== undefined || qualityDetail.sharpness !== undefined) && (
-                    <View style={styles.qualityDetailWrap}>
-                      {qualityDetail.brightness !== undefined && (
-                        <Text style={styles.qualityDetailText}>
-                          Brightness: {Math.round(qualityDetail.brightness)}%
-                          {qualityDetail.min_required ? ` / required ${qualityDetail.min_required}%` : ''}
-                        </Text>
-                      )}
-                      {qualityDetail.sharpness !== undefined && (
-                        <Text style={styles.qualityDetailText}>
-                          Sharpness: {Math.round(qualityDetail.sharpness)}%
-                          {qualityDetail.min_required ? ` / required ${qualityDetail.min_required}%` : ''}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                  {attemptsRemaining !== null && !isLockedOut && (
-                    <Text style={styles.attemptsText}>
-                      Attempts remaining: {attemptsRemaining}
-                    </Text>
-                  )}
                 </View>
 
-                {isLockedOut ? (
-                  <>
-                    <TouchableOpacity style={styles.secondaryBtn} onPress={handleResetAttempts}>
-                      <Ionicons name="refresh-outline" size={18} color={Colors.primary} />
-                      <Text style={styles.secondaryBtnText}>Reset & Retry</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.ghostBtn} onPress={handleClose}>
-                      <Text style={styles.ghostBtnText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <>
-                    <TouchableOpacity style={styles.primaryBtn} onPress={tryAgain}>
-                      <Ionicons name="refresh-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-                      <Text style={styles.primaryBtnText}>Try Again</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.ghostBtn} onPress={handleClose}>
-                      <Text style={styles.ghostBtnText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+                <TouchableOpacity style={styles.primaryBtn} onPress={tryAgain}>
+                  <Ionicons name="refresh-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
+                  <Text style={styles.primaryBtnText}>Try Again</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.ghostBtn} onPress={handleClose}>
+                  <Text style={styles.ghostBtnText}>Cancel</Text>
+                </TouchableOpacity>
               </View>
             )}
           </ScrollView>

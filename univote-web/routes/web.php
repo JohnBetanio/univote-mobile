@@ -109,6 +109,11 @@ Route::prefix('admin')->middleware('auth:admin')->group(function () {
     });
 });
 
+// Google OAuth Callback (for mobile deep linking & browser popups)
+Route::get('/voter/auth/google/callback', function () {
+    return view('auth.google-callback');
+});
+
 /*
 |--------------------------------------------------------------------------
 | SPA Catch-All Route  (must be last)
@@ -118,3 +123,4 @@ Route::prefix('admin')->middleware('auth:admin')->group(function () {
 Route::fallback(function () {
     return view('index');
 });
+

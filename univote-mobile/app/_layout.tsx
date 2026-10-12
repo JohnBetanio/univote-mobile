@@ -22,9 +22,16 @@ function RootLayoutNav() {
         router.replace('/(auth)/VoterLogin');
       }
     } else {
-      // The mobile app currently provides the voter dashboard for all roles.
-      if (!inTabsGroup) {
-        router.replace('/(tabs)/(voter)/VoterDashboard');
+      // If student needs setup (password, profile info, face scan), enforce GoogleSetup
+      if (user.role === 'student' && user.needs_setup) {
+        if ((segments[1] as string) !== 'GoogleSetup') {
+          router.replace('/(auth)/GoogleSetup' as any);
+        }
+      } else {
+        // The mobile app currently provides the voter dashboard for all roles.
+        if (!inTabsGroup) {
+          router.replace('/(tabs)/(voter)/VoterDashboard');
+        }
       }
     }
   }, [user, loading, router, segments]);

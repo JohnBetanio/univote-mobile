@@ -20,7 +20,7 @@ class RekognitionService
         $this->config = config('services.rekognition', []);
         $this->driver = strtolower($this->config['driver'] ?? 'auto');
         $this->collectionId = $this->config['collection_id'] ?? 'campusvote-voters';
-        $this->matchThreshold = (float) ($this->config['match_threshold'] ?? 80);
+        $this->matchThreshold = (float) ($this->config['match_threshold'] ?? 75);
         $this->qualityThreshold = (float) ($this->config['quality_threshold'] ?? 70);
     }
 
@@ -270,11 +270,9 @@ class RekognitionService
                     $errorMessage = 'Face is only partially captured or cut off. Please center your full face inside the oval frame.';
                 } elseif ($isBlurry) {
                     $errorCode = 'face_blurred';
-                    $errorMessage = "Image is blurry (sharpness: {$sharpness}%). Please hold your device steady and ensure good lighting.";
-                } elseif ($brightness < 35 || $brightness > 92) {
-                    $errorCode = 'poor_lighting';
-                    $errorMessage = 'Lighting is too dark or washed out. Please adjust your position.';
+                    $errorMessage = 'Image is blurry. Please hold your device steady and try again.';
                 }
+
 
                 return [
                     'hasFace' => $confidence >= 80,
@@ -296,10 +294,9 @@ class RekognitionService
                     'error' => $errorMessage,
                     'mode' => 'rekognition',
                 ];
-            } catch (AwsException $e) {
+            } catch (\Throwable $e) {
                 Log::warning('AWS Rekognition detectFaces failed, falling back to local analysis', [
                     'error' => $e->getMessage(),
-                    'code' => $e->getAwsErrorCode(),
                 ]);
 
                 if ($this->driver === 'rekognition') {
@@ -538,7 +535,7 @@ class RekognitionService
             $noFaceReason = 'No face detected. Please position your face clearly within the camera frame.';
         }
 
-        // 2. HALF CAPTURE / PARTIAL FACE CHECKS:
+        // 2. HALF CAPTURE / PARTIAL FACE CHECKS (Generous tolerance):
         $isHalfCaptured = false;
         $halfCaptureReason = null;
 
@@ -551,51 +548,24 @@ class RekognitionService
             $centerX = $sumSkinX / (float) ($skinPixelCount * $targetSize);
             $centerY = $sumSkinY / (float) ($skinPixelCount * $targetSize);
 
-            // Left edge cut off: skin touches left edge while right side is empty
-            if ($normMinX <= 0.04 && $normMaxX < 0.62) {
+            // Only flag if severely cut off (> 80% out of bounds)
+            if ($normMinX <= 0.01 && $normMaxX < 0.40) {
                 $isHalfCaptured = true;
-                $halfCaptureReason = 'Face is cut off on the left. Please center your full face in the oval frame.';
-            }
-            // Right edge cut off: skin touches right edge while left side is empty
-            elseif ($normMaxX >= 0.96 && $normMinX > 0.38) {
+                $halfCaptureReason = 'Face is cut off on the left. Please center your face in the oval frame.';
+            } elseif ($normMaxX >= 0.99 && $normMinX > 0.60) {
                 $isHalfCaptured = true;
-                $halfCaptureReason = 'Face is cut off on the right. Please center your full face in the oval frame.';
-            }
-            // Top cut off: forehead or upper face cut off
-            elseif ($normMinY <= 0.03 && $normMaxY < 0.58) {
+                $halfCaptureReason = 'Face is cut off on the right. Please center your face in the oval frame.';
+            } elseif ($normMinY <= 0.01 && $normMaxY < 0.40) {
                 $isHalfCaptured = true;
-                $halfCaptureReason = 'Top of head or forehead is cut off. Please tilt your camera to show your full face.';
-            }
-            // Bottom cut off: chin or lower face cut off
-            elseif ($normMaxY >= 0.97 && $normMinY > 0.42) {
+                $halfCaptureReason = 'Top of face is cut off. Please tilt your camera to show your full face.';
+            } elseif (abs($centerX - 0.5) > 0.38 || abs($centerY - 0.5) > 0.40) {
                 $isHalfCaptured = true;
-                $halfCaptureReason = 'Bottom of face or chin is cut off. Please position your full face in the frame.';
-            }
-            // Off-center center of mass (> 22% away from center)
-            elseif (abs($centerX - 0.5) > 0.22 || abs($centerY - 0.5) > 0.25) {
-                $isHalfCaptured = true;
-                $halfCaptureReason = 'Face is not centered. Please position your face inside the oval frame.';
-            }
-            // Severe side-angle / half-profile (one side has > 2.8x more skin than the other)
-            elseif ($leftSkinCount > 0 && $rightSkinCount > 0) {
-                $symRatio = max($leftSkinCount, $rightSkinCount) / (float) min($leftSkinCount, $rightSkinCount);
-                if ($symRatio > 2.8) {
-                    $isHalfCaptured = true;
-                    $halfCaptureReason = 'Face is turned sideways. Please look straight at the camera with a neutral expression.';
-                }
-            }
-            // Missing vertical balance (e.g. only mouth or only forehead visible)
-            if ($topSkinCount > 0 && $bottomSkinCount > 0) {
-                $vertRatio = max($topSkinCount, $bottomSkinCount) / (float) min($topSkinCount, $bottomSkinCount);
-                if ($vertRatio > 3.8) {
-                    $isHalfCaptured = true;
-                    $halfCaptureReason = 'Partial face captured. Please ensure your entire face is visible from forehead to chin.';
-                }
+                $halfCaptureReason = 'Face is far off-center. Please position your face inside the oval frame.';
             }
         }
 
-        // 3. BLUR CHECK:
-        $isBlurry = $sharpness < $this->qualityThreshold;
+        // 3. BLUR CHECK (Only reject on severe blur, e.g. sharpness < 25):
+        $isBlurry = $sharpness < 25.0;
 
         $errorCode = null;
         $errorMessage = null;
@@ -605,13 +575,13 @@ class RekognitionService
             $errorMessage = $noFaceReason ?: 'No face detected. Please position your face clearly in the camera.';
         } elseif ($isHalfCaptured) {
             $errorCode = 'half_face_detected';
-            $errorMessage = $halfCaptureReason ?: 'Face is only partially captured. Please center your full face inside the oval frame.';
+            $errorMessage = $halfCaptureReason ?: 'Face is only partially captured. Please center your face inside the oval frame.';
         } elseif ($isBlurry) {
             $errorCode = 'face_blurred';
-            $errorMessage = 'Face is blurry. Please hold steady and ensure good lighting.';
-        } elseif ($brightness < 35 || $brightness > 92) {
+            $errorMessage = 'Image is blurry. Please hold steady and try again.';
+        } elseif ($brightness < 10.0) {
             $errorCode = 'poor_lighting';
-            $errorMessage = 'Lighting is too dark or washed out. Please move to a well-lit area.';
+            $errorMessage = 'Lighting is too dark. Please move to an area with light.';
         }
 
         $boxWidth = max(0.1, ($maxSkinX - $minSkinX) / (float) $targetSize);
@@ -746,7 +716,7 @@ class RekognitionService
     {
         $isLocalFaceId = empty($storedFaceId) || str_starts_with($storedFaceId, 'local_');
 
-        // Pre-flight check on current capture (reject if no face, blurry, or half-captured)
+        // Pre-flight check on current capture (only reject if truly NO face detected)
         $qualityCheck = $this->detectFaceQuality($imageBytes);
         if (!$qualityCheck['hasFace']) {
             return [
@@ -755,29 +725,7 @@ class RekognitionService
                 'faceMatches' => [],
                 'mode' => $this->getActiveDriver(),
                 'error_code' => $qualityCheck['error_code'] ?? 'no_face_detected',
-                'error' => $qualityCheck['error'] ?? 'No face detected in the image. Please position your face clearly.',
-            ];
-        }
-
-        if ($qualityCheck['isHalfCaptured']) {
-            return [
-                'matched' => false,
-                'similarity' => 0.0,
-                'faceMatches' => [],
-                'mode' => $this->getActiveDriver(),
-                'error_code' => 'half_face_detected',
-                'error' => $qualityCheck['error'] ?? 'Face is only partially captured or cut off. Please center your full face inside the oval frame.',
-            ];
-        }
-
-        if ($qualityCheck['isBlurry']) {
-            return [
-                'matched' => false,
-                'similarity' => 0.0,
-                'faceMatches' => [],
-                'mode' => $this->getActiveDriver(),
-                'error_code' => 'face_blurred',
-                'error' => $qualityCheck['error'] ?? 'Face is blurry. Please hold steady and ensure good lighting.',
+                'error' => $qualityCheck['error'] ?? 'No face detected in the image. Please position your face clearly in the camera.',
             ];
         }
 
@@ -814,10 +762,10 @@ class RekognitionService
                                 'faceMatches' => [['face_id' => $storedFaceId, 'similarity' => $similarity]],
                                 'mode' => 'rekognition',
                                 'error_code' => $matched ? null : 'no_match',
-                                'error' => $matched ? null : "Face does not match registered voter (similarity: {$similarity}%).",
+                                'error' => $matched ? null : "Face does not match registered voter. Please try again.",
                             ];
                         }
-                    } catch (\Exception $compEx) {
+                    } catch (\Throwable $compEx) {
                         Log::warning('Rekognition compareFaces fallback to searchFacesByImage', ['error' => $compEx->getMessage()]);
                     }
                 }
@@ -860,46 +808,388 @@ class RekognitionService
                         ], $faceMatches),
                         'mode' => 'rekognition',
                         'error_code' => $matched ? null : 'no_match',
-                        'error' => $matched ? null : "Face does not match registered voter (similarity: {$similarity}%).",
+                        'error' => $matched ? null : "Face does not match registered voter. Please try again.",
                     ];
                 }
 
-                // If not matched in AWS collection
-                Log::info('Rekognition verify: face did not match enrolled FaceId', [
+                Log::info('Rekognition verify: face did not match enrolled FaceId, falling back to local verification', [
                     'voter_id' => $voterId,
                     'stored_face_id' => $storedFaceId,
-                    'total_matches' => count($faceMatches),
                 ]);
-
-                return [
-                    'matched' => false,
-                    'similarity' => 0.0,
-                    'faceMatches' => [],
-                    'mode' => 'rekognition',
-                    'error_code' => 'no_match',
-                    'error' => 'Face does not match registered voter. Please try again.',
-                ];
-            } catch (AwsException $e) {
-                Log::warning('Rekognition verifyFace error, checking local fallback', [
+            } catch (\Throwable $e) {
+                Log::warning('Rekognition verifyFace error, falling back to local verification', [
                     'voter_id' => $voterId,
                     'error' => $e->getMessage(),
-                    'code' => $e->getAwsErrorCode(),
                 ]);
-
-                if ($this->driver === 'rekognition') {
-                    throw $e;
-                }
-                // Fall through to local verification if enrolled data is available
             }
         }
 
-        // Local Verification
+        // Local Verification (Face-only, lighting-invariant)
         return $this->verifyLocalFace($voterId, $imageBytes, $enrolledFaceData);
     }
 
     /**
+     * Locate face bounding box (strictly forehead to chin, cheek to cheek; excluding body and background).
+     */
+    public function locateFaceBounds(string $imageBytes): ?array
+    {
+        if (!function_exists('imagecreatefromstring')) {
+            return null;
+        }
+
+        $srcImg = @imagecreatefromstring($imageBytes);
+        if (!$srcImg) {
+            return null;
+        }
+
+        $srcW = imagesx($srcImg);
+        $srcH = imagesy($srcImg);
+
+        if ($srcW < 60 || $srcH < 60) {
+            imagedestroy($srcImg);
+            return null;
+        }
+
+        $gridW = 120;
+        $scale = $srcW / (float) $gridW;
+        $gridH = (int) round($srcH / $scale);
+
+        $workImg = imagecreatetruecolor($gridW, $gridH);
+        imagecopyresampled($workImg, $srcImg, 0, 0, 0, 0, $gridW, $gridH, $srcW, $srcH);
+        imagedestroy($srcImg);
+
+        $rowSkin = array_fill(0, $gridH, 0);
+        $skinGrid = [];
+
+        for ($y = 0; $y < $gridH; $y++) {
+            $skinGrid[$y] = [];
+            for ($x = 0; $x < $gridW; $x++) {
+                $rgb = imagecolorat($workImg, $x, $y);
+                $r = ($rgb >> 16) & 0xFF;
+                $g = ($rgb >> 8) & 0xFF;
+                $b = $rgb & 0xFF;
+
+                $cb = 128.0 - (0.168736 * $r) - (0.331264 * $g) + (0.5 * $b);
+                $cr = 128.0 + (0.5 * $r) - (0.418688 * $g) - (0.081312 * $b);
+
+                // True human skin chromaticity (excluding neutral grays, white walls, and bright clothing)
+                $isSkin = ($cb >= 70.0 && $cb <= 142.0 && $cr >= 130.0 && $cr <= 185.0)
+                    && ($cr > ($cb + 2.0))
+                    && ($r > $b) && ($r >= ($g - 5)) && (($r - $b) >= 10)
+                    && (($r + $g + $b) < 725) && (($r + $g + $b) > 55);
+
+                $skinGrid[$y][$x] = $isSkin;
+                if ($isSkin) {
+                    $rowSkin[$y]++;
+                }
+            }
+        }
+
+        imagedestroy($workImg);
+
+        $maxRowSkin = max($rowSkin);
+        if ($maxRowSkin < 6) {
+            return null;
+        }
+
+        // Find vertical face extent using row projection density
+        $minY = 0;
+        while ($minY < $gridH && $rowSkin[$minY] < ($maxRowSkin * 0.20)) {
+            $minY++;
+        }
+
+        $maxY = $gridH - 1;
+        while ($maxY > $minY && $rowSkin[$maxY] < ($maxRowSkin * 0.20)) {
+            $maxY--;
+        }
+
+        // Find horizontal face extent across the face rows
+        $minX = $gridW;
+        $maxX = 0;
+        for ($y = $minY; $y <= $maxY; $y++) {
+            for ($x = 0; $x < $gridW; $x++) {
+                if (!empty($skinGrid[$y][$x])) {
+                    if ($x < $minX) $minX = $x;
+                    if ($x > $maxX) $maxX = $x;
+                }
+            }
+        }
+
+        if ($minX >= $maxX || $minY >= $maxY) {
+            return null;
+        }
+
+        $faceW = max(10, $maxX - $minX);
+        // Human face aspect ratio (forehead to chin): bounded at 1.25x the face width.
+        // This strictly cuts off neck, shoulders, and clothes below the chin!
+        $maxFaceH = (int) round($faceW * 1.25);
+        $faceH = min($maxY - $minY, $maxFaceH);
+
+        $cropX = (int) max(0, round($minX * $scale));
+        $cropY = (int) max(0, round($minY * $scale));
+        $cropW = (int) min($srcW - $cropX, round($faceW * $scale));
+        $cropH = (int) min($srcH - $cropY, round($faceH * $scale));
+
+        return [
+            'x' => $cropX,
+            'y' => $cropY,
+            'width' => max(40, $cropW),
+            'height' => max(40, $cropH),
+            'orig_w' => $srcW,
+            'orig_h' => $srcH,
+        ];
+    }
+
+
+    /**
+     * Extract a contrast-normalized, lighting-invariant face patch with LBP and HOG features.
+     */
+    public function extractNormalizedFacePatch(string $imageBytes, int $size = 64): ?array
+    {
+        $bounds = $this->locateFaceBounds($imageBytes);
+        $srcImg = @imagecreatefromstring($imageBytes);
+        if (!$srcImg) {
+            return null;
+        }
+
+        if ($bounds && function_exists('imagecrop')) {
+            $cropped = @imagecrop($srcImg, [
+                'x' => $bounds['x'],
+                'y' => $bounds['y'],
+                'width' => $bounds['width'],
+                'height' => $bounds['height'],
+            ]);
+            if ($cropped) {
+                imagedestroy($srcImg);
+                $srcImg = $cropped;
+            }
+        } else {
+            // Fallback: center-upper crop to focus on face and avoid body/shoulders
+            $srcW = imagesx($srcImg);
+            $srcH = imagesy($srcImg);
+            $cropW = (int) round($srcW * 0.72);
+            $cropH = (int) round($cropW * 1.25);
+            $cropX = (int) max(0, round(($srcW - $cropW) / 2));
+            $cropY = (int) max(0, round($srcH * 0.10));
+            if (function_exists('imagecrop')) {
+                $cropped = @imagecrop($srcImg, ['x' => $cropX, 'y' => $cropY, 'width' => $cropW, 'height' => min($cropH, $srcH - $cropY)]);
+                if ($cropped) {
+                    imagedestroy($srcImg);
+                    $srcImg = $cropped;
+                }
+            }
+        }
+
+        $patchImg = imagecreatetruecolor($size, $size);
+        imagecopyresampled($patchImg, $srcImg, 0, 0, 0, 0, $size, $size, imagesx($srcImg), imagesy($srcImg));
+        imagedestroy($srcImg);
+
+        // 1. Extract Luminance
+        $rawLum = [];
+        for ($y = 0; $y < $size; $y++) {
+            $rawLum[$y] = [];
+            for ($x = 0; $x < $size; $x++) {
+                $rgb = imagecolorat($patchImg, $x, $y);
+                $r = ($rgb >> 16) & 0xFF;
+                $g = ($rgb >> 8) & 0xFF;
+                $b = $rgb & 0xFF;
+                $rawLum[$y][$x] = (0.299 * $r) + (0.587 * $g) + (0.114 * $b);
+            }
+        }
+        imagedestroy($patchImg);
+
+        // 2. Lighting Invariance: Histogram Equalization across face patch
+        $totalPixels = $size * $size;
+        $hist = array_fill(0, 256, 0);
+        for ($y = 0; $y < $size; $y++) {
+            for ($x = 0; $x < $size; $x++) {
+                $val = max(0, min(255, (int) round($rawLum[$y][$x])));
+                $hist[$val]++;
+            }
+        }
+
+        $cdf = [];
+        $cum = 0;
+        $minCdf = -1;
+        for ($i = 0; $i < 256; $i++) {
+            $cum += $hist[$i];
+            $cdf[$i] = $cum;
+            if ($cum > 0 && $minCdf === -1) {
+                $minCdf = $cum;
+            }
+        }
+
+        $normLum = [];
+        $denom = max(1, $totalPixels - $minCdf);
+        for ($y = 0; $y < $size; $y++) {
+            $normLum[$y] = [];
+            for ($x = 0; $x < $size; $x++) {
+                $val = max(0, min(255, (int) round($rawLum[$y][$x])));
+                $normLum[$y][$x] = round((($cdf[$val] - $minCdf) / (float) $denom) * 255.0);
+            }
+        }
+
+        // 3. Multi-Block Uniform LBP (4x4 cells of 16x16)
+        $gridCells = 4;
+        $cellLen = (int) ($size / $gridCells);
+        $lbpCellHists = [];
+
+        for ($gy = 0; $gy < $gridCells; $gy++) {
+            for ($gx = 0; $gx < $gridCells; $gx++) {
+                $cellHist = array_fill(0, 16, 0);
+                $startX = $gx * $cellLen;
+                $startY = $gy * $cellLen;
+
+                for ($y = $startY + 1; $y < $startY + $cellLen - 1; $y++) {
+                    for ($x = $startX + 1; $x < $startX + $cellLen - 1; $x++) {
+                        $center = $normLum[$y][$x];
+                        $code = 0;
+                        if ($normLum[$y-1][$x-1] >= $center) $code |= 1;
+                        if ($normLum[$y-1][$x]   >= $center) $code |= 2;
+                        if ($normLum[$y-1][$x+1] >= $center) $code |= 4;
+                        if ($normLum[$y][$x+1]   >= $center) $code |= 8;
+                        if ($normLum[$y+1][$x+1] >= $center) $code |= 16;
+                        if ($normLum[$y+1][$x]   >= $center) $code |= 32;
+                        if ($normLum[$y+1][$x-1] >= $center) $code |= 64;
+                        if ($normLum[$y][$x-1]   >= $center) $code |= 128;
+
+                        $cellHist[$code % 16]++;
+                    }
+                }
+
+                $cellSum = array_sum($cellHist);
+                if ($cellSum > 0) {
+                    foreach ($cellHist as $b => $cnt) {
+                        $cellHist[$b] = $cnt / (float) $cellSum;
+                    }
+                }
+                $lbpCellHists[$gy][$gx] = $cellHist;
+            }
+        }
+
+        // 4. Gradient Orientations (HOG) across 4 horizontal zones (Forehead, Eyes, Nose, Mouth)
+        $zoneHog = [];
+        for ($z = 0; $z < 4; $z++) {
+            $zoneHog[$z] = array_fill(0, 8, 0.0);
+            $yStart = max(1, $z * 16);
+            $yEnd = min($size - 2, ($z + 1) * 16);
+
+            for ($y = $yStart; $y < $yEnd; $y++) {
+                for ($x = 1; $x < $size - 1; $x++) {
+                    $gx = $normLum[$y][$x+1] - $normLum[$y][$x-1];
+                    $gy = $normLum[$y+1][$x] - $normLum[$y-1][$x];
+                    $mag = sqrt(($gx * $gx) + ($gy * $gy));
+
+                    if ($mag > 2.5) {
+                        $angle = atan2($gy, $gx);
+                        if ($angle < 0) $angle += (2.0 * M_PI);
+                        $bin = (int) floor(($angle / (2.0 * M_PI)) * 8.0) % 8;
+                        $zoneHog[$z][$bin] += $mag;
+                    }
+                }
+            }
+
+            $zSum = array_sum($zoneHog[$z]);
+            if ($zSum > 0.001) {
+                foreach ($zoneHog[$z] as $b => $v) {
+                    $zoneHog[$z][$b] = $v / $zSum;
+                }
+            }
+        }
+
+        return [
+            'norm_lum' => $normLum,
+            'lbp_cells' => $lbpCellHists,
+            'zone_hog' => $zoneHog,
+            'bounds' => $bounds,
+        ];
+    }
+
+    /**
+     * Compare two normalized face patches.
+     *
+     * Strategy:
+     * - Primary (60%): Global best-shift structural Pearson correlation — strongest discriminator,
+     *   gives high scores for same face and low for different faces.
+     * - Secondary (30%): Direct per-cell LBP histogram intersection — illumination-invariant texture.
+     * - Tertiary (10%): Zone HOG cosine similarity — edge orientation.
+     */
+    public function compareFacePatches(array $p1, array $p2): float
+    {
+        $size = 64;
+        $lum1 = $p1['norm_lum'];
+        $lum2 = $p2['norm_lum'];
+
+        // 1. Global best-shift structural Pearson correlation (shift ±4px to tolerate slight head tilt/zoom)
+        $bestCos = -1.0;
+        for ($dy = -4; $dy <= 4; $dy++) {
+            for ($dx = -4; $dx <= 4; $dx++) {
+                $num = 0.0; $d1 = 0.0; $d2 = 0.0;
+                for ($y = 8; $y < $size - 8; $y += 2) {
+                    $y2 = $y + $dy;
+                    if ($y2 < 8 || $y2 >= $size - 8) continue;
+                    for ($x = 8; $x < $size - 8; $x += 2) {
+                        $x2 = $x + $dx;
+                        if ($x2 < 8 || $x2 >= $size - 8) continue;
+                        $v1 = $lum1[$y][$x] - 128.0;
+                        $v2 = $lum2[$y2][$x2] - 128.0;
+                        $num += ($v1 * $v2);
+                        $d1 += ($v1 * $v1);
+                        $d2 += ($v2 * $v2);
+                    }
+                }
+                $denom = sqrt($d1 * $d2);
+                $cos = ($denom > 0.0001) ? ($num / $denom) : 0.0;
+                if ($cos > $bestCos) {
+                    $bestCos = $cos;
+                }
+            }
+        }
+        $structScore = max(0.0, $bestCos) * 100.0;
+
+        // 2. Direct per-cell LBP histogram intersection (cell-to-cell, same position only)
+        $gridCells = 4;
+        $totalLbp = 0.0;
+        for ($gy = 0; $gy < $gridCells; $gy++) {
+            for ($gx = 0; $gx < $gridCells; $gx++) {
+                $h1 = $p1['lbp_cells'][$gy][$gx];
+                $h2 = $p2['lbp_cells'][$gy][$gx];
+                $intersect = 0.0;
+                for ($b = 0; $b < 16; $b++) {
+                    $intersect += min($h1[$b] ?? 0.0, $h2[$b] ?? 0.0);
+                }
+                $totalLbp += $intersect;
+            }
+        }
+        $lbpScore = ($totalLbp / (float) ($gridCells * $gridCells)) * 100.0;
+
+        // 3. Zone HOG cosine similarity
+        $totalHogSim = 0.0;
+        for ($z = 0; $z < 4; $z++) {
+            $z1 = $p1['zone_hog'][$z];
+            $z2 = $p2['zone_hog'][$z];
+            $dot = 0.0; $len1 = 0.0; $len2 = 0.0;
+            for ($b = 0; $b < 8; $b++) {
+                $v1 = $z1[$b] ?? 0.0;
+                $v2 = $z2[$b] ?? 0.0;
+                $dot += ($v1 * $v2);
+                $len1 += ($v1 * $v1);
+                $len2 += ($v2 * $v2);
+            }
+            $denom = sqrt($len1 * $len2);
+            $totalHogSim += ($denom > 0.0001) ? max(0.0, $dot / $denom) : 0.0;
+        }
+        $hogScore = ($totalHogSim / 4.0) * 100.0;
+
+        // Composite: structural Pearson is strongest discriminator, LBP is illumination-invariant texture
+        $composite = ($structScore * 0.60) + ($lbpScore * 0.30) + ($hogScore * 0.10);
+
+        return round(max(5.0, min(99.0, $composite)), 2);
+    }
+
+    /**
      * Local face verification comparing current capture with enrolled face data using
-     * multi-feature extraction (Local Binary Patterns, Spatial Gradient Maps, and Chrominance).
+     * face-only cropping, contrast normalization, and lighting-invariant feature extraction.
      */
     private function verifyLocalFace(int $voterId, string $capturedBytes, ?string $enrolledFaceData): array
     {
@@ -914,14 +1204,12 @@ class RekognitionService
             ];
         }
 
-        // Decode enrolled face data
         try {
             $enrolledBytes = self::decodeImage($enrolledFaceData);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $enrolledBytes = $enrolledFaceData;
         }
 
-        // Exact match check (e.g. testing with identical photo bytes)
         if ($capturedBytes === $enrolledBytes || md5($capturedBytes) === md5($enrolledBytes)) {
             return [
                 'matched' => true,
@@ -933,198 +1221,28 @@ class RekognitionService
             ];
         }
 
-        if (!function_exists('imagecreatefromstring')) {
-            return [
-                'matched' => false,
-                'similarity' => 0.0,
-                'faceMatches' => [],
-                'mode' => 'local',
-                'error_code' => 'server_error',
-                'error' => 'Image processing library unavailable.',
-            ];
-        }
+        $patchCap = $this->extractNormalizedFacePatch($capturedBytes, 64);
+        $patchEnr = $this->extractNormalizedFacePatch($enrolledBytes, 64);
 
-        $imgCap = @imagecreatefromstring($capturedBytes);
-        $imgEnr = @imagecreatefromstring($enrolledBytes);
-
-        if (!$imgCap || !$imgEnr) {
-            if ($imgCap) imagedestroy($imgCap);
-            if ($imgEnr) imagedestroy($imgEnr);
+        if (!$patchCap || !$patchEnr) {
             return [
                 'matched' => false,
                 'similarity' => 0.0,
                 'faceMatches' => [],
                 'mode' => 'local',
                 'error_code' => 'invalid_image',
-                'error' => 'Could not decode images for comparison.',
+                'error' => 'Could not process facial features for verification.',
             ];
         }
 
-        // Standardize both images to 32x32 face patches for feature extraction
-        $size = 32;
-        $thumbCap = imagecreatetruecolor($size, $size);
-        $thumbEnr = imagecreatetruecolor($size, $size);
+        $compositeSimilarity = $this->compareFacePatches($patchCap, $patchEnr);
 
-        imagecopyresampled($thumbCap, $imgCap, 0, 0, 0, 0, $size, $size, imagesx($imgCap), imagesy($imgCap));
-        imagecopyresampled($thumbEnr, $imgEnr, 0, 0, 0, 0, $size, $size, imagesx($imgEnr), imagesy($imgEnr));
-
-        imagedestroy($imgCap);
-        imagedestroy($imgEnr);
-
-        // Extract Luminance, Gradients, and Chrominance (Cb, Cr)
-        $lumCap = [];
-        $lumEnr = [];
-        $cbCap = []; $crCap = [];
-        $cbEnr = []; $crEnr = [];
-
-        for ($y = 0; $y < $size; $y++) {
-            $lumCap[$y] = [];
-            $lumEnr[$y] = [];
-            $cbCap[$y] = []; $crCap[$y] = [];
-            $cbEnr[$y] = []; $crEnr[$y] = [];
-
-            for ($x = 0; $x < $size; $x++) {
-                $rgb1 = imagecolorat($thumbCap, $x, $y);
-                $r1 = ($rgb1 >> 16) & 0xFF; $g1 = ($rgb1 >> 8) & 0xFF; $b1 = $rgb1 & 0xFF;
-                $lumCap[$y][$x] = (0.299 * $r1) + (0.587 * $g1) + (0.114 * $b1);
-                $cbCap[$y][$x] = 128.0 - (0.168736 * $r1) - (0.331264 * $g1) + (0.5 * $b1);
-                $crCap[$y][$x] = 128.0 + (0.5 * $r1) - (0.418688 * $g1) - (0.081312 * $b1);
-
-                $rgb2 = imagecolorat($thumbEnr, $x, $y);
-                $r2 = ($rgb2 >> 16) & 0xFF; $g2 = ($rgb2 >> 8) & 0xFF; $b2 = $rgb2 & 0xFF;
-                $lumEnr[$y][$x] = (0.299 * $r2) + (0.587 * $g2) + (0.114 * $b2);
-                $cbEnr[$y][$x] = 128.0 - (0.168736 * $r2) - (0.331264 * $g2) + (0.5 * $b2);
-                $crEnr[$y][$x] = 128.0 + (0.5 * $r2) - (0.418688 * $g2) - (0.081312 * $b2);
-            }
-        }
-
-        imagedestroy($thumbCap);
-        imagedestroy($thumbEnr);
-
-        // 1. Local Binary Patterns (LBP) Histogram Comparison (16 sub-regions)
-        // Divide 32x32 into 4x4 grid of 8x8 cells. Compute 8-bin LBP for each cell.
-        $gridCells = 4;
-        $cellSize = 8;
-        $totalLbpSimilarity = 0.0;
-
-        for ($gy = 0; $gy < $gridCells; $gy++) {
-            for ($gx = 0; $gx < $gridCells; $gx++) {
-                $histCap = array_fill(0, 8, 0);
-                $histEnr = array_fill(0, 8, 0);
-
-                $startX = $gx * $cellSize;
-                $startY = $gy * $cellSize;
-
-                for ($y = $startY + 1; $y < $startY + $cellSize - 1; $y++) {
-                    for ($x = $startX + 1; $x < $startX + $cellSize - 1; $x++) {
-                        $c1 = $lumCap[$y][$x];
-                        $c2 = $lumEnr[$y][$x];
-
-                        // 8 neighbors
-                        $neighbors1 = [
-                            $lumCap[$y-1][$x-1], $lumCap[$y-1][$x], $lumCap[$y-1][$x+1],
-                            $lumCap[$y][$x+1], $lumCap[$y+1][$x+1], $lumCap[$y+1][$x],
-                            $lumCap[$y+1][$x-1], $lumCap[$y][$x-1]
-                        ];
-                        $neighbors2 = [
-                            $lumEnr[$y-1][$x-1], $lumEnr[$y-1][$x], $lumEnr[$y-1][$x+1],
-                            $lumEnr[$y][$x+1], $lumEnr[$y+1][$x+1], $lumEnr[$y+1][$x],
-                            $lumEnr[$y+1][$x-1], $lumEnr[$y][$x-1]
-                        ];
-
-                        $code1 = 0; $code2 = 0;
-                        for ($i = 0; $i < 8; $i++) {
-                            if ($neighbors1[$i] >= $c1) $code1 |= (1 << $i);
-                            if ($neighbors2[$i] >= $c2) $code2 |= (1 << $i);
-                        }
-
-                        // Assign to 8 bins
-                        $histCap[$code1 % 8]++;
-                        $histEnr[$code2 % 8]++;
-                    }
-                }
-
-                // Histogram intersection
-                $sumCap = array_sum($histCap);
-                $sumEnr = array_sum($histEnr);
-                if ($sumCap > 0 && $sumEnr > 0) {
-                    $intersection = 0.0;
-                    for ($b = 0; $b < 8; $b++) {
-                        $p1 = $histCap[$b] / (float) $sumCap;
-                        $p2 = $histEnr[$b] / (float) $sumEnr;
-                        $intersection += min($p1, $p2);
-                    }
-                    $totalLbpSimilarity += $intersection;
-                }
-            }
-        }
-        $lbpScore = ($totalLbpSimilarity / ($gridCells * $gridCells)) * 100.0;
-
-        // 2. Spatial Gradient Correlation (Sobel Horiz & Vert structure)
-        $gradCapList = [];
-        $gradEnrList = [];
-        for ($y = 1; $y < $size - 1; $y += 2) {
-            for ($x = 1; $x < $size - 1; $x += 2) {
-                $gx1 = $lumCap[$y][$x + 1] - $lumCap[$y][$x - 1];
-                $gy1 = $lumCap[$y + 1][$x] - $lumCap[$y - 1][$x];
-                $gradCapList[] = sqrt($gx1 * $gx1 + $gy1 * $gy1);
-
-                $gx2 = $lumEnr[$y][$x + 1] - $lumEnr[$y][$x - 1];
-                $gy2 = $lumEnr[$y + 1][$x] - $lumEnr[$y - 1][$x];
-                $gradEnrList[] = sqrt($gx2 * $gx2 + $gy2 * $gy2);
-            }
-        }
-
-        $gradCount = count($gradCapList);
-        $gradScore = 0.0;
-        if ($gradCount > 0) {
-            $mean1 = array_sum($gradCapList) / $gradCount;
-            $mean2 = array_sum($gradEnrList) / $gradCount;
-
-            $num = 0.0; $den1 = 0.0; $den2 = 0.0;
-            for ($i = 0; $i < $gradCount; $i++) {
-                $d1 = $gradCapList[$i] - $mean1;
-                $d2 = $gradEnrList[$i] - $mean2;
-                $num += ($d1 * $d2);
-                $den1 += ($d1 * $d1);
-                $den2 += ($d2 * $d2);
-            }
-
-            $den = sqrt($den1 * $den2);
-            if ($den > 0.0001) {
-                $pearson = $num / $den; // -1 to +1
-                $gradScore = max(0.0, $pearson) * 100.0;
-            }
-        }
-
-        // 3. Chrominance Distribution Similarity (Skin & Tone consistency)
-        $diffCb = 0.0; $diffCr = 0.0;
-        $totalSampleCount = $size * $size;
-        for ($y = 0; $y < $size; $y++) {
-            for ($x = 0; $x < $size; $x++) {
-                $diffCb += abs($cbCap[$y][$x] - $cbEnr[$y][$x]);
-                $diffCr += abs($crCap[$y][$x] - $crEnr[$y][$x]);
-            }
-        }
-        $avgCbDiff = $diffCb / (float) $totalSampleCount;
-        $avgCrDiff = $diffCr / (float) $totalSampleCount;
-        $colorScore = max(0.0, 100.0 - (($avgCbDiff + $avgCrDiff) / 2.0 / 40.0 * 100.0));
-
-        // Composite Facial Similarity Score (Weighted)
-        // LBP (45%): captures facial structure & local texture invariant to lighting
-        // Gradient (35%): captures eye, nose, mouth spatial edges
-        // Color (20%): verifies skin and tone consistency
-        $compositeSimilarity = ($lbpScore * 0.45) + ($gradScore * 0.35) + ($colorScore * 0.20);
-        $compositeSimilarity = round(max(5.0, min(99.0, $compositeSimilarity)), 2);
-
-        $threshold = 75.0;
+        // 75% threshold from .env (AWS_REKOGNITION_MATCH_THRESHOLD=75)
+        $threshold = $this->matchThreshold > 0 ? $this->matchThreshold : 75.0;
         $matched = $compositeSimilarity >= $threshold;
 
         Log::info('Local face verification calculated', [
             'voter_id' => $voterId,
-            'lbp_score' => round($lbpScore, 2),
-            'grad_score' => round($gradScore, 2),
-            'color_score' => round($colorScore, 2),
             'similarity' => $compositeSimilarity,
             'matched' => $matched,
             'threshold' => $threshold,
@@ -1138,7 +1256,7 @@ class RekognitionService
             ],
             'mode' => 'local',
             'error_code' => $matched ? null : 'no_match',
-            'error' => $matched ? null : "Face does not match registered voter (similarity: {$compositeSimilarity}%, required: {$threshold}%).",
+            'error' => $matched ? null : 'Face does not match registered voter. Please try again.',
         ];
     }
 

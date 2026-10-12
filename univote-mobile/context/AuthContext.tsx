@@ -7,10 +7,12 @@ interface AuthContextType {
   loading: boolean;
   registerStudent: (data: { fullName: string; email: string; password: string; age: number; sex: string; course: string; yearLevel: string; organizationId?: number }) => Promise<{ success: boolean; error?: string }>;
   finishRegistration: () => Promise<void>;
+  completeProfileSetup: (data: { password: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) => Promise<{ success: boolean; error?: string }>;
   loginStudent: (data: { email: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: (params: { idToken?: string; email?: string; name?: string; googleId?: string }) => Promise<{ success: boolean; isNewUser?: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshFacialConfig: () => Promise<void>;
+  updateProfile: (data: { name?: string; age?: number; sex?: string; course?: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -70,10 +72,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(response.data);
   };
 
+  const completeProfileSetup = async (data: { password: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) => {
+    try {
+      const response = await api.setupProfile(data);
+      if (response.data?.user && !response.error) {
+        setUser(response.data.user);
+        return { success: true };
+      }
+      return { success: false, error: response.error || 'Failed to save profile' };
+    } catch (error: any) {
+      console.error('Setup profile error:', error);
+      return { success: false, error: error?.message || 'Failed to save profile. Please try again.' };
+    }
+  };
+
   const loginStudent = async ({ email, password }: { email: string; password: string }) => {
     try {
       const response = await api.login(email, password);
-      if (response.data) {
+      if (response.data?.token && response.data?.user && !response.error) {
         await api.setToken(response.data.token);
         setUser(response.data.user);
         return { success: true };
@@ -88,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginWithGoogle = async (params: { idToken?: string; email?: string; name?: string; googleId?: string }) => {
     try {
       const response = await api.googleLogin(params);
-      if (response.data) {
+      if (response.data?.token && response.data?.user && !response.error) {
         await api.setToken(response.data.token);
         setUser(response.data.user);
         return { success: true, isNewUser: response.data.user.is_new_user };
@@ -99,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: 'Google login failed. Please try again.' };
     }
   };
+
 
   const logout = async () => {
     try {
@@ -129,8 +146,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateProfile = async (data: { name?: string; age?: number; sex?: string; course?: string }) => {
+    try {
+      const response = await api.updateProfile(data);
+      if (response.data?.user && !response.error) {
+        setUser((prev) => {
+          if (!prev) return response.data!.user;
+          return {
+            ...prev,
+            ...response.data!.user,
+          };
+        });
+        return { success: true };
+      }
+      return { success: false, error: response.error || 'Failed to update profile' };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to update profile' };
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, registerStudent, finishRegistration, loginStudent, loginWithGoogle, logout, refreshFacialConfig }}>
+    <AuthContext.Provider value={{ user, loading, registerStudent, finishRegistration, completeProfileSetup, loginStudent, loginWithGoogle, logout, refreshFacialConfig, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );
