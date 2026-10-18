@@ -382,7 +382,7 @@ export default {
 
 /* ==================== Header ==================== */
 .page-header {
-    background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+    background: #146c3a;
     border-radius: 18px;
     padding: 36px 40px;
     margin-bottom: 28px;

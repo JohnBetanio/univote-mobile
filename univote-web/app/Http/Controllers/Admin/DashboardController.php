@@ -21,6 +21,7 @@ class DashboardController extends Controller
         $activeElections = Election::where('status', 'active')->count();
         $totalVoters = Voter::count();
         $totalVotes = Vote::count();
+        $completedProfiles = Voter::where('is_profile_completed', true)->count();
 
         $organizations = Organization::orderBy('name')->get();
         $voters = Voter::withCount('votes')->get();
@@ -160,6 +161,7 @@ class DashboardController extends Controller
                 'active_elections' => $activeElections,
                 'total_voters' => $totalVoters,
                 'total_votes' => $totalVotes,
+                'completed_profiles' => $completedProfiles,
             ],
             'organization_stats' => $organizationStats->values(),
             'election_polls'     => $electionPolls->values(),

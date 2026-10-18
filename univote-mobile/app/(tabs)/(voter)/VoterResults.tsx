@@ -1,19 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+  Image,
+} from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/services/api';
+import { useRouter } from 'expo-router';
+
+interface ResultCandidate {
+  id: number;
+  name: string;
+  vote_count: number;
+  percentage: number;
+  winner: boolean;
+  photo?: string | null;
+}
 
 interface ResultPosition {
   id: number;
   name: string;
-  candidates: {
-    id: number;
-    name: string;
-    vote_count: number;
-    percentage: number;
-    winner: boolean;
-  }[];
+  candidates: ResultCandidate[];
 }
 
 interface ResultElection {
@@ -22,47 +35,170 @@ interface ResultElection {
   status: string;
   positions: ResultPosition[];
   total_votes: number;
+  organization?: string | null;
 }
 
-function InitialsCircle({ initials }: { initials: string }) {
+const AVATAR_BG_COLORS = ['#E8F5E9', '#E3F2FD', '#F3E5F5', '#FFF3E0', '#E0F2F1', '#FBE9E7'];
+const AVATAR_TEXT_COLORS = ['#2E7D32', '#1565C0', '#7B1FA2', '#E65100', '#00695C', '#D84315'];
+
+function getAvatarColors(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % AVATAR_BG_COLORS.length;
+  return { bg: AVATAR_BG_COLORS[idx], text: AVATAR_TEXT_COLORS[idx] };
+}
+
+function getInitials(name: string): string {
+  if (!name) return 'C';
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((n) => n[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
+function WinnerBadge({ isLive }: { isLive?: boolean }) {
   return (
-    <View style={styles.initialsCircle}>
-      <Text style={styles.initialsText}>{initials}</Text>
+    <View style={isLive ? styles.leaderBadge : styles.winnerBadge}>
+      <Ionicons name={isLive ? "trending-up" : "trophy"} size={11} color={isLive ? "#2563EB" : "#B45309"} />
+      <Text style={isLive ? styles.leaderText : styles.winnerText}>
+        {isLive ? 'Leading' : 'Elected Winner'}
+      </Text>
     </View>
   );
 }
 
-function WinnerBadge() {
-  return (
-    <View style={styles.winnerBadge}>
-      <Text style={styles.winnerText}>Winner</Text>
-    </View>
-  );
-}
+function CandidateResultCard({
+  candidate,
+  isLeader,
+  rank,
+  isLive,
+}: {
+  candidate: ResultCandidate;
+  isLeader: boolean;
+  rank: number;
+  isLive?: boolean;
+}) {
+  const [photoError, setPhotoError] = useState(false);
+  const isWinner = candidate.winner || isLeader;
+  const initials = getInitials(candidate.name);
+  const avatar = getAvatarColors(candidate.name);
+  const percentage = Math.min(100, Math.max(0, candidate.percentage || 0));
 
-function CandidateCard({ candidate }: { candidate: any }) {
-  const initials = candidate.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+  const photoUri = candidate.photo
+    ? candidate.photo.startsWith('http') || candidate.photo.startsWith('data:')
+      ? candidate.photo
+      : `${process.env.EXPO_PUBLIC_API_BASE_URL?.replace('/api', '') || 'http://10.0.2.2:8000'}/storage/${candidate.photo}`
+    : null;
+
   return (
-    <View style={styles.candidateCard}>
-      <View style={styles.candidateTop}>
-        <InitialsCircle initials={initials} />
-        <Text style={styles.candidateName}>{candidate.name}</Text>
-        {candidate.winner && <WinnerBadge />}
-        <Text style={styles.voteCount}>{candidate.vote_count} votes</Text>
-      </View>
-      <View style={styles.progressBg}>
-        <View style={[styles.progressFill, { width: `${candidate.percentage}%` }]}>
-          <Text style={styles.progressText}>{candidate.percentage}%</Text>
+    <View style={[styles.candidateCard, isWinner && (isLive ? styles.candidateCardLeader : styles.candidateCardWinner)]}>
+      {/* Top Details Row */}
+      <View style={styles.candidateTopRow}>
+        {/* Rank / Avatar */}
+        <View style={styles.avatarWithRank}>
+          <View
+            style={[
+              styles.avatarCircle,
+              { backgroundColor: isWinner ? (isLive ? '#EFF6FF' : '#FEF3C7') : avatar.bg },
+            ]}
+          >
+            {photoUri && !photoError ? (
+              <Image
+                source={{ uri: photoUri }}
+                style={styles.avatarImg}
+                onError={() => setPhotoError(true)}
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.avatarText,
+                  { color: isWinner ? (isLive ? '#2563EB' : '#B45309') : avatar.text },
+                ]}
+              >
+                {initials}
+              </Text>
+            )}
+          </View>
+          <View
+            style={[
+              styles.rankBadge,
+              isWinner ? (isLive ? styles.rankBadgeLeader : styles.rankBadgeWinner) : styles.rankBadgeNormal,
+            ]}
+          >
+            <Text
+              style={[
+                styles.rankBadgeText,
+                isWinner && (isLive ? styles.rankBadgeTextLeader : styles.rankBadgeTextWinner),
+              ]}
+            >
+              #{rank}
+            </Text>
+          </View>
         </View>
+
+        {/* Name & Badge Column */}
+        <View style={styles.candidateNameCol}>
+          <View style={styles.nameBadgeWrap}>
+            <Text
+              style={[
+                styles.candidateNameText,
+                isWinner && (isLive ? styles.candidateNameTextLeader : styles.candidateNameTextWinner),
+              ]}
+              numberOfLines={1}
+            >
+              {candidate.name}
+            </Text>
+            {isWinner && <WinnerBadge isLive={isLive} />}
+          </View>
+          <Text style={styles.candidateVotesText}>
+            <Text style={styles.votesBold}>{candidate.vote_count.toLocaleString()}</Text> vote{candidate.vote_count !== 1 ? 's' : ''}
+          </Text>
+        </View>
+
+        {/* Percentage Label */}
+        <View style={styles.percentageColumn}>
+          <Text
+            style={[
+              styles.percentageNumberText,
+              isWinner
+                ? (isLive ? styles.percentageTextLeader : styles.percentageTextWinner)
+                : styles.percentageTextNormal,
+            ]}
+          >
+            {percentage}%
+          </Text>
+        </View>
+      </View>
+
+      {/* Progress Bar */}
+      <View style={styles.progressBarTrack}>
+        <View
+          style={[
+            styles.progressBarFill,
+            { width: `${percentage}%` },
+            isWinner
+              ? (isLive ? styles.progressBarFillLeader : styles.progressBarFillWinner)
+              : styles.progressBarFillNormal,
+          ]}
+        />
       </View>
     </View>
   );
 }
 
 export default function VoterResultsScreen() {
+  const router = useRouter();
+  const [statusFilter, setStatusFilter] = useState<'closed' | 'active'>('closed');
   const [results, setResults] = useState<ResultElection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedElectionId, setSelectedElectionId] = useState<number | null>(null);
 
   const mountedRef = React.useRef(true);
   useEffect(() => {
@@ -72,12 +208,13 @@ export default function VoterResultsScreen() {
     };
   }, []);
 
-  const loadResults = useCallback(async () => {
+  const loadResults = useCallback(async (filter: 'closed' | 'active' = statusFilter) => {
     try {
-      const electionsRes = await api.getElections('closed');
+      const electionsRes = await api.getElections(filter);
       if (!mountedRef.current) return;
       const elections = Array.isArray(electionsRes.data) ? electionsRes.data : [];
       const fetched: ResultElection[] = [];
+
       for (const e of elections) {
         const r = await api.getElectionResults(e.id);
         if (!mountedRef.current) return;
@@ -86,35 +223,67 @@ export default function VoterResultsScreen() {
             id: r.data.election.id,
             title: r.data.election.title,
             status: r.data.election.status,
-            positions: r.data.positions,
-            total_votes: r.data.total_votes,
+            positions: r.data.positions || [],
+            total_votes: r.data.total_votes || 0,
+            organization: (r.data.election as any)?.organization?.name || null,
           });
         }
       }
       if (!mountedRef.current) return;
       setResults(fetched);
+      if (fetched.length > 0) {
+        setSelectedElectionId(fetched[0].id);
+      } else {
+        setSelectedElectionId(null);
+      }
     } catch (error) {
       console.error('Error loading results:', error);
     }
-  }, []);
+  }, [statusFilter]);
 
   useEffect(() => {
-    loadResults().finally(() => {
+    setLoading(true);
+    loadResults(statusFilter).finally(() => {
       if (mountedRef.current) setLoading(false);
     });
-  }, [loadResults]);
-
+  }, [statusFilter, loadResults]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadResults();
+    await loadResults(statusFilter);
     setRefreshing(false);
   };
 
+  const switchFilter = (newFilter: 'closed' | 'active') => {
+    if (newFilter === statusFilter) return;
+    setStatusFilter(newFilter);
+  };
+
+  const totalCertifiedVotes = useMemo(() => {
+    return results.reduce((acc, el) => acc + (el.total_votes || 0), 0);
+  }, [results]);
+
+  const totalElectionsCount = results.length;
+
+  const currentElection = useMemo(() => {
+    if (results.length === 0) return null;
+    return results.find((e) => e.id === selectedElectionId) || results[0];
+  }, [results, selectedElectionId]);
+
+  const isLiveMode = statusFilter === 'active';
+
   if (loading) {
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} />
+      <View style={styles.loadingContainer}>
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingTitle}>
+            {isLiveMode ? 'Fetching live tally updates...' : 'Tabulating certified results...'}
+          </Text>
+          <Text style={styles.loadingSubtitle}>
+            {isLiveMode ? 'Aggregating current ballots' : 'Fetching audited election counts'}
+          </Text>
+        </View>
       </View>
     );
   }
@@ -123,42 +292,316 @@ export default function VoterResultsScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+      showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Results</Text>
+      {/* ── Brand Top Bar ── */}
+      <View style={styles.topBar}>
+        <View style={styles.brandGroup}>
+          <Image source={require('../../../assets/univote-logo.jpg')} style={styles.brandLogo} />
+          <View>
+            <Text style={styles.brandTitle}>UniVote</Text>
+            <Text style={styles.brandSubtitle}>Election Results Center</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={styles.refreshBtn}
+          onPress={onRefresh}
+          activeOpacity={0.7}
+          accessibilityLabel="Refresh election results"
+        >
+          <Ionicons name="sync-outline" size={18} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      <Text style={styles.pageTitle}>Election Results</Text>
-      <Text style={styles.pageSubtitle}>View the results of ended elections</Text>
+      {/* ── Hero Banner ── */}
+      <View style={styles.heroBanner}>
+        <View style={styles.heroContent}>
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.certifiedTag}>
+              <Ionicons
+                name={isLiveMode ? "pulse-outline" : "ribbon-outline"}
+                size={13}
+                color={isLiveMode ? "#93C5FD" : "#A7F3D0"}
+              />
+              <Text style={styles.certifiedTagText}>
+                {isLiveMode ? 'Real-Time Preliminary Tally' : 'Official Certified Outcomes'}
+              </Text>
+            </View>
+            <View style={isLiveMode ? styles.liveHeaderPill : styles.closedPill}>
+              <Ionicons
+                name={isLiveMode ? "radio" : "lock-closed"}
+                size={10}
+                color={isLiveMode ? "#EF4444" : "#D1D5DB"}
+              />
+              <Text style={isLiveMode ? styles.liveHeaderPillText : styles.closedPillText}>
+                {isLiveMode ? 'Live' : 'Audited'}
+              </Text>
+            </View>
+          </View>
 
+          <Text style={styles.heroTitle}>Election Results</Text>
+          <Text style={styles.heroSubtitle}>
+            {isLiveMode
+              ? 'Real-time ballot tabulations and leading candidates for ongoing campus elections.'
+              : 'Certified tally counts and elected student leaders from concluded elections.'}
+          </Text>
+
+          {/* Mode Switcher Tabs */}
+          <View style={styles.modeSwitcherContainer}>
+            <TouchableOpacity
+              style={[
+                styles.modeTabBtn,
+                !isLiveMode && styles.modeTabBtnActive,
+              ]}
+              onPress={() => switchFilter('closed')}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={13}
+                color={!isLiveMode ? Colors.primary : 'rgba(255,255,255,0.85)'}
+              />
+              <Text
+                style={[
+                  styles.modeTabText,
+                  !isLiveMode && styles.modeTabTextActive,
+                ]}
+              >
+                Concluded (Official)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.modeTabBtn,
+                isLiveMode && styles.modeTabBtnActive,
+              ]}
+              onPress={() => switchFilter('active')}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="pulse-outline"
+                size={13}
+                color={isLiveMode ? Colors.primary : 'rgba(255,255,255,0.85)'}
+              />
+              <Text
+                style={[
+                  styles.modeTabText,
+                  isLiveMode && styles.modeTabTextActive,
+                ]}
+              >
+                Live Tallies
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Stats Row */}
+          <View style={styles.statPillsRow}>
+            <View style={styles.statPill}>
+              <Ionicons name="podium-outline" size={15} color="#FDE047" />
+              <Text style={styles.statPillVal}>{totalElectionsCount}</Text>
+              <Text style={styles.statPillLabel}>{isLiveMode ? 'Active' : 'Elections'}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statPill}>
+              <Ionicons name="checkbox-outline" size={15} color="#fff" />
+              <Text style={styles.statPillVal}>{totalCertifiedVotes.toLocaleString()}</Text>
+              <Text style={styles.statPillLabel}>{isLiveMode ? 'Cast So Far' : 'Total Votes'}</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statPill}>
+              <Ionicons name="shield-checkmark-outline" size={14} color="#fff" />
+              <Text style={styles.statPillVal}>100%</Text>
+              <Text style={styles.statPillLabel}>Encrypted</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* ── Empty State ── */}
       {results.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No results available yet</Text>
+        <View style={styles.emptyCard}>
+          <View style={[styles.emptyIconCircle, isLiveMode && { backgroundColor: '#EFF6FF' }]}>
+            <Ionicons
+              name={isLiveMode ? "pulse-outline" : "podium-outline"}
+              size={44}
+              color={isLiveMode ? "#2563EB" : Colors.primary}
+            />
+          </View>
+          <Text style={styles.emptyTitle}>
+            {isLiveMode ? 'No Active Elections' : 'No Concluded Elections'}
+          </Text>
+          <Text style={styles.emptyDesc}>
+            {isLiveMode
+              ? 'There are currently no active elections underway. Check concluded results to see previous winners.'
+              : 'Official certified outcomes will appear here once elections conclude. You can check live tallies for ongoing votes.'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.voteNowBtn, isLiveMode && { backgroundColor: '#2563EB' }]}
+            onPress={() => {
+              if (!isLiveMode) {
+                switchFilter('active');
+              } else {
+                router.push('/(tabs)/(voter)/VoterVote');
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name={!isLiveMode ? "pulse-outline" : "checkbox-outline"} size={18} color="#fff" />
+            <Text style={styles.voteNowBtnText}>
+              {!isLiveMode ? 'Check Live Tallies' : 'Go to Active Ballots'}
+            </Text>
+            <Ionicons name="arrow-forward" size={16} color="#fff" />
+          </TouchableOpacity>
         </View>
       ) : (
-        results.map((election) => (
-          <View key={election.id} style={styles.electionWrapper}>
-            <View style={styles.electionCard}>
-              <View style={styles.electionIcon}>
-                <Ionicons name="school-outline" size={18} color={Colors.primary} />
-              </View>
-              <Text style={styles.electionTitle}>{election.title}</Text>
-              <View style={styles.endedBadge}>
-                <Text style={styles.endedText}>{election.status}</Text>
-              </View>
+        <View style={styles.resultsMainWrap}>
+          {/* Election Selector Segment (if multiple elections exist) */}
+          {results.length > 1 && (
+            <View style={styles.electionPickerWrap}>
+              <Text style={styles.pickerSectionLabel}>
+                SELECT {isLiveMode ? 'ACTIVE ELECTION' : 'CONCLUDED ELECTION'}
+              </Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.pickerScroll}
+              >
+                {results.map((e) => {
+                  const isSelected = e.id === currentElection?.id;
+                  return (
+                    <TouchableOpacity
+                      key={e.id}
+                      style={[
+                        styles.pickerTab,
+                        isSelected && styles.pickerTabActive,
+                      ]}
+                      onPress={() => setSelectedElectionId(e.id)}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons
+                        name={isLiveMode ? "pulse-outline" : "trophy-outline"}
+                        size={14}
+                        color={isSelected ? Colors.primary : '#6B7280'}
+                      />
+                      <Text
+                        style={[
+                          styles.pickerTabText,
+                          isSelected && styles.pickerTabTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {e.title}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
+          )}
 
-            {election.positions.map((pos: ResultPosition) => (
-              <View key={pos.id} style={styles.positionSection}>
-                <Text style={styles.positionTitle}>{pos.name}</Text>
-                {pos.candidates.map((c: any) => (
-                  <CandidateCard key={c.id} candidate={c} />
-                ))}
+          {/* Current Election Details */}
+          {currentElection && (
+            <View style={styles.electionSheet}>
+              {/* Election Summary Card */}
+              <View style={styles.electionHeaderCard}>
+                <View style={styles.electionTopRow}>
+                  <View style={[styles.trophyIconWrap, isLiveMode && styles.liveIconWrap]}>
+                    <Ionicons
+                      name={isLiveMode ? "pulse" : "trophy"}
+                      size={20}
+                      color={isLiveMode ? "#2563EB" : "#D97706"}
+                    />
+                  </View>
+                  <View style={styles.electionHeaderInfo}>
+                    {currentElection.organization ? (
+                      <Text style={styles.orgTagText}>{currentElection.organization.toUpperCase()}</Text>
+                    ) : null}
+                    <Text style={styles.electionSheetTitle}>{currentElection.title}</Text>
+                  </View>
+                  {isLiveMode ? (
+                    <View style={styles.liveBadge}>
+                      <Ionicons name="radio" size={11} color="#DC2626" />
+                      <Text style={styles.liveBadgeText}>Live Tally</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.certifiedBadge}>
+                      <Ionicons name="checkmark-done" size={12} color="#15803D" />
+                      <Text style={styles.certifiedBadgeText}>Certified</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Turnout ribbon */}
+                <View style={styles.turnoutRibbon}>
+                  <View style={styles.turnoutItem}>
+                    <Ionicons name="people" size={13} color="#6B7280" />
+                    <Text style={styles.turnoutLabel}>Total Ballots Counted:</Text>
+                    <Text style={styles.turnoutVal}>{currentElection.total_votes.toLocaleString()}</Text>
+                  </View>
+                  <View style={styles.turnoutItem}>
+                    <Ionicons name="layers-outline" size={13} color="#6B7280" />
+                    <Text style={styles.turnoutLabel}>Contested Positions:</Text>
+                    <Text style={styles.turnoutVal}>{currentElection.positions.length}</Text>
+                  </View>
+                </View>
               </View>
-            ))}
-          </View>
-        ))
+
+              {/* Positions & Tally Breakdown */}
+              {currentElection.positions.map((pos, pIdx) => {
+                const sortedCandidates = [...pos.candidates].sort((a, b) => b.vote_count - a.vote_count);
+
+                return (
+                  <View key={pos.id} style={styles.positionWrapper}>
+                    {/* Position Section Header */}
+                    <View style={styles.positionHeaderRow}>
+                      <View style={styles.positionTitleLeft}>
+                        <View style={styles.positionIndexPill}>
+                          <Text style={styles.positionIndexText}>{pIdx + 1}</Text>
+                        </View>
+                        <Text style={styles.positionTitleText}>{pos.name}</Text>
+                      </View>
+                      <View style={styles.candidateCountBadge}>
+                        <Text style={styles.candidateCountBadgeText}>
+                          {sortedCandidates.length} candidate{sortedCandidates.length !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Candidate Cards */}
+                    <View style={styles.candidatesBlock}>
+                      {sortedCandidates.map((c, cIdx) => {
+                        const isLeader = cIdx === 0 && c.vote_count > 0;
+                        return (
+                          <CandidateResultCard
+                            key={c.id}
+                            candidate={c}
+                            isLeader={isLeader}
+                            rank={cIdx + 1}
+                            isLive={isLiveMode}
+                          />
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* ── Footer Assurance ── */}
+      {results.length > 0 && (
+        <View style={styles.securityFooter}>
+          <Ionicons name="shield-checkmark" size={13} color="#9CA3AF" />
+          <Text style={styles.securityFooterText}>
+            {isLiveMode
+              ? 'Preliminary counts update automatically as verified ballots are received.'
+              : 'Results officially audited and certified by the University Commission on Elections.'}
+          </Text>
+        </View>
       )}
     </ScrollView>
   );
@@ -167,160 +610,697 @@ export default function VoterResultsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F3F4F6',
   },
   content: {
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
-  header: {
+
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    padding: 24,
+  },
+  loadingBox: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+    maxWidth: 320,
+    width: '100%',
+  },
+  loadingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  loadingSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+
+  // Top Bar
+  topBar: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
+  brandGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  pageTitle: {
-    fontSize: 24,
+  brandLogo: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+  },
+  brandTitle: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#1a2a3a',
-    marginTop: 20,
-    marginHorizontal: 20,
-    marginBottom: 4,
+    color: '#fff',
+    letterSpacing: 0.3,
   },
-  pageSubtitle: {
-    fontSize: 13,
-    color: '#8899aa',
-    marginHorizontal: 20,
-    marginBottom: 16,
+  brandSubtitle: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.75)',
   },
-  electionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 20,
-    marginBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  electionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: Colors.primaryBg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  electionTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1a2a3a',
-  },
-  endedBadge: {
-    backgroundColor: '#E8F5E9',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  endedText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  positionSection: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  positionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1a2a3a',
-    marginBottom: 10,
-    marginTop: 4,
-  },
-  candidateCard: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E0E6EB',
-  },
-  candidateTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  initialsCircle: {
+  refreshBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.primary,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
   },
-  initialsText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  candidateName: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1a2a3a',
-  },
-  winnerBadge: {
+
+  // Hero Banner
+  heroBanner: {
     backgroundColor: Colors.primary,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginRight: 10,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  heroContent: {
+    position: 'relative',
+    zIndex: 1,
+  },
+  heroBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  winnerText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
+  certifiedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    gap: 5,
   },
-  voteCount: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#556677',
-  },
-  progressBg: {
-    height: 24,
-    backgroundColor: '#E8EDF2',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 24,
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    paddingRight: 8,
-    minWidth: 36,
-  },
-  progressText: {
+  certifiedTagText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#fff',
   },
-  emptyState: { padding: 40, alignItems: 'center' },
-  emptyText: { fontSize: 16, color: '#8899aa', textAlign: 'center' },
-  electionWrapper: { marginBottom: 20 },
+  closedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#064E3B',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
+  },
+  closedPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#A7F3D0',
+    letterSpacing: 0.3,
+  },
+  liveHeaderPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.25)',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  liveHeaderPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FCA5A5',
+    letterSpacing: 0.3,
+  },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.3,
+    marginBottom: 4,
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+
+  // Mode Switcher Tabs
+  modeSwitcherContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    borderRadius: 14,
+    padding: 3,
+    marginBottom: 14,
+    gap: 4,
+  },
+  modeTabBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 11,
+    gap: 6,
+  },
+  modeTabBtnActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  modeTabText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.85)',
+  },
+  modeTabTextActive: {
+    color: Colors.primary,
+    fontWeight: '800',
+  },
+
+  // Stats
+  statPillsRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  statPill: {
+    alignItems: 'center',
+    gap: 2,
+    flex: 1,
+  },
+  statPillVal: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  statPillLabel: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '600',
+  },
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+
+  // Results Layout
+  resultsMainWrap: {
+    marginTop: 14,
+  },
+
+  // Election Picker
+  electionPickerWrap: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
+  pickerSectionLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#9CA3AF',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  pickerScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  pickerTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 6,
+  },
+  pickerTabActive: {
+    backgroundColor: '#ECFDF5',
+    borderColor: Colors.primary,
+  },
+  pickerTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4B5563',
+    maxWidth: 180,
+  },
+  pickerTabTextActive: {
+    color: Colors.primary,
+    fontWeight: '800',
+  },
+
+  // Election Sheet
+  electionSheet: {
+    paddingHorizontal: 16,
+  },
+  electionHeaderCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  electionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 12,
+  },
+  trophyIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  liveIconWrap: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  electionHeaderInfo: {
+    flex: 1,
+  },
+  orgTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.primary,
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  electionSheetTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+    lineHeight: 22,
+  },
+  certifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  certifiedBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  liveBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#DC2626',
+  },
+  turnoutRibbon: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  turnoutItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  turnoutLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  turnoutVal: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#111827',
+  },
+
+  // Positions
+  positionWrapper: {
+    marginBottom: 18,
+  },
+  positionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  positionTitleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  positionIndexPill: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  positionIndexText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4B5563',
+  },
+  positionTitleText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  candidateCountBadge: {
+    backgroundColor: '#E5E7EB',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  candidateCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  candidatesBlock: {
+    gap: 10,
+  },
+
+  // Candidate Card
+  candidateCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  candidateCardWinner: {
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFDF7',
+    shadowColor: '#F59E0B',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  candidateCardLeader: {
+    borderColor: '#BFDBFE',
+    backgroundColor: '#F8FAFC',
+    shadowColor: '#3B82F6',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  candidateTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  avatarWithRank: {
+    position: 'relative',
+    marginRight: 10,
+  },
+  avatarCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
+  avatarText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  rankBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  rankBadgeWinner: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  rankBadgeLeader: {
+    backgroundColor: '#DBEAFE',
+    borderColor: '#3B82F6',
+  },
+  rankBadgeNormal: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#D1D5DB',
+  },
+  rankBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#6B7280',
+  },
+  rankBadgeTextWinner: {
+    color: '#B45309',
+  },
+  rankBadgeTextLeader: {
+    color: '#1D4ED8',
+  },
+  candidateNameCol: {
+    flex: 1,
+    marginRight: 8,
+  },
+  nameBadgeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 2,
+  },
+  candidateNameText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  candidateNameTextWinner: {
+    color: '#111827',
+  },
+  candidateNameTextLeader: {
+    color: '#1E3A8A',
+  },
+  winnerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  winnerText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  leaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  leaderText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+  candidateVotesText: {
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  votesBold: {
+    fontWeight: '700',
+    color: '#374151',
+  },
+  percentageColumn: {
+    alignItems: 'flex-end',
+  },
+  percentageNumberText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  percentageTextWinner: {
+    color: '#B45309',
+  },
+  percentageTextLeader: {
+    color: '#1D4ED8',
+  },
+  percentageTextNormal: {
+    color: '#4B5563',
+  },
+
+  // Progress Bar
+  progressBarTrack: {
+    height: 8,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressBarFillWinner: {
+    backgroundColor: '#10B981',
+  },
+  progressBarFillLeader: {
+    backgroundColor: '#3B82F6',
+  },
+  progressBarFillNormal: {
+    backgroundColor: '#94A3B8',
+  },
+
+  // Empty State
+  emptyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    marginHorizontal: 16,
+    marginTop: 24,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  emptyDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+    maxWidth: 280,
+  },
+  voteNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    gap: 8,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  voteNowBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+
+  // Security Footer
+  securityFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  securityFooterText: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
 });

@@ -127,7 +127,7 @@ class ElectionController extends Controller
 
     public function results($id)
     {
-        $election = Election::with('positions.candidates.votes')->findOrFail($id);
+        $election = Election::with(['organization', 'positions.candidates.votes'])->findOrFail($id);
 
         $positions = $election->positions->map(function ($position) {
             $candidates = $position->candidates()->withCount('votes')->get();
@@ -140,12 +140,13 @@ class ElectionController extends Controller
                     return [
                         'id' => $candidate->id,
                         'name' => $candidate->name,
+                        'photo' => $candidate->photo,
                         'vote_count' => $candidate->votes_count,
                         'percentage' => $totalVotes > 0 ? round(($candidate->votes_count / $totalVotes) * 100, 2) : 0,
                         'winner' => false,
                     ];
                 })->sortByDesc('vote_count')->values()->map(function ($c, $idx) {
-                    $c['winner'] = $idx === 0;
+                    $c['winner'] = $idx === 0 && $c['vote_count'] > 0;
                     return $c;
                 })->values(),
             ];
@@ -156,6 +157,10 @@ class ElectionController extends Controller
                 'id' => $election->id,
                 'title' => $election->title,
                 'status' => $this->mapStatusToApi($election->status),
+                'organization' => $election->organization ? [
+                    'id' => $election->organization->id,
+                    'name' => $election->organization->name,
+                ] : null,
             ],
             'positions' => $positions,
             'total_votes' => $election->votes()->count(),

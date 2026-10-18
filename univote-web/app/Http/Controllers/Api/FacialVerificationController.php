@@ -162,7 +162,9 @@ class FacialVerificationController extends Controller
             ]);
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to enroll face. Please ensure your face is well-lit and clearly centered.',
+                'error' => config('app.debug')
+                    ? 'Failed to enroll face: ' . $e->getMessage()
+                    : 'Failed to enroll face. Please try again.',
                 'error_code' => 'enrollment_failed',
             ], 422);
         }

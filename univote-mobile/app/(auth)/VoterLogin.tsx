@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import * as Crypto from 'expo-crypto';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/Colors';
@@ -83,7 +84,7 @@ export default function VoterLoginScreen() {
       return;
     }
 
-    const nonce = Math.random().toString(36).substring(2);
+    const nonce = Crypto.randomUUID ? Crypto.randomUUID() : Math.random().toString(36).substring(2);
 
     try {
       safeSetLoading(true);
@@ -210,8 +211,9 @@ export default function VoterLoginScreen() {
             }
           </TouchableOpacity>
 
-          <View style={styles.divider}>
+          <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or</Text>
             <View style={styles.dividerLine} />
           </View>
 
@@ -224,6 +226,14 @@ export default function VoterLoginScreen() {
             <Ionicons name="logo-google" size={20} color="#4285F4" />
             <Text style={styles.secondaryBtnText}>Sign in with Google</Text>
           </TouchableOpacity>
+
+          <View style={styles.links}>
+            <TouchableOpacity onPress={() => router.push('/(auth)/VoterRegister')} activeOpacity={0.7}>
+              <Text style={styles.linkText}>
+                Don't have an account? <Text style={styles.linkBold}>Register</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -261,8 +271,14 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.65 },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.4 },
-  divider: { marginVertical: 20 },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+    gap: 12,
+  },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#ebebeb' },
+  dividerText: { fontSize: 13, color: '#9CA3AF', fontWeight: '500', textTransform: 'uppercase' },
   secondaryBtn: {
     height: 50, borderWidth: 1.5, borderColor: Colors.border,
     borderRadius: 26, flexDirection: 'row', justifyContent: 'center',

@@ -1,16 +1,50 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, ActivityIndicator,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { api, Election, FacialConfig } from '@/services/api';
 import FaceVerificationModal, { FaceVerificationAction } from '@/components/FaceVerificationModal';
+import { useRouter } from 'expo-router';
 
 type Step = 'list' | 'vote' | 'success';
 
+// Aesthetic avatar background and text colors
+const AVATAR_BG_COLORS = ['#E8F5E9', '#E3F2FD', '#F3E5F5', '#FFF3E0', '#E0F2F1', '#FBE9E7'];
+const AVATAR_TEXT_COLORS = ['#2E7D32', '#1565C0', '#7B1FA2', '#E65100', '#00695C', '#D84315'];
+
+function getAvatarColors(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const idx = Math.abs(hash) % AVATAR_BG_COLORS.length;
+  return { bg: AVATAR_BG_COLORS[idx], text: AVATAR_TEXT_COLORS[idx] };
+}
+
+function getInitials(name: string): string {
+  if (!name) return 'C';
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 export default function VoterVoteScreen() {
+  const router = useRouter();
   const [step, setStep] = useState<Step>('list');
   const [elections, setElections] = useState<Election[]>([]);
   const [selectedElection, setSelectedElection] = useState<Election | null>(null);
@@ -69,7 +103,6 @@ export default function VoterVoteScreen() {
     });
   }, [loadData]);
 
-
   const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
@@ -78,7 +111,8 @@ export default function VoterVoteScreen() {
 
   const handleSelectElection = (election: Election) => {
     if (votedElections.has(election.id)) {
-      Alert.alert('Already Voted', `You have already voted in "${election.title}".`);
+      // Direct navigation to their ballot receipt instead of a dead-end alert
+      router.push('/(tabs)/(voter)/VoterVotes');
       return;
     }
     setSelectedElection(election);
@@ -127,7 +161,7 @@ export default function VoterVoteScreen() {
 
     const missing = positions.filter((p) => !selections[p]);
     if (missing.length > 0) {
-      Alert.alert('Incomplete', `Please select a candidate for: ${missing.join(', ')}`);
+      Alert.alert('Incomplete Ballot', `Please select a candidate for: ${missing.join(', ')}`);
       return;
     }
 
@@ -223,157 +257,342 @@ export default function VoterVoteScreen() {
     setFacialSessionToken(null);
   };
 
-  if (loading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} />
-      </View>
-    );
-  }
-
-  if (step === 'success') {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 32 }]}>
-        <View style={styles.successCircle}>
-          <Ionicons name="checkmark" size={48} color="#fff" />
-        </View>
-        <Text style={styles.successTitle}>Vote Submitted!</Text>
-        <Text style={styles.successDesc}>
-          Your vote for &quot;{selectedElection?.title}&quot; has been recorded successfully.
-        </Text>
-        <TouchableOpacity style={styles.primaryBtn} onPress={handleBack}>
-          <Text style={styles.primaryBtnText}>Back to Elections</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (step === 'vote' && selectedElection) {
+  // Grouped positions for active ballot
+  const ballotGroups = useMemo(() => {
+    if (!selectedElection) return [];
     const candidates = selectedElection.candidates || [];
     const positions = [...new Set(candidates.map((c) => c.position || 'Candidate'))];
-    const grouped = positions.map((pos) => ({
+    return positions.map((pos) => ({
       position: pos,
       candidates: candidates.filter((c) => (c.position || 'Candidate') === pos),
     }));
-    const allSelected = positions.every((p) => selections[p]);
-    const facialReady = !facialRequired || !facialConfig?.is_enabled || !!facialSessionToken || !facialConfig?.is_enrolled;
-    const canSubmit = allSelected && submitting === false;
+  }, [selectedElection]);
+
+  const selectedCount = useMemo(() => {
+    return Object.keys(selections).length;
+  }, [selections]);
+
+  const totalPositions = useMemo(() => {
+    return ballotGroups.length;
+  }, [ballotGroups]);
+
+  const allSelected = totalPositions > 0 && selectedCount === totalPositions;
+  const progressRatio = totalPositions > 0 ? selectedCount / totalPositions : 0;
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingTitle}>Loading active elections...</Text>
+          <Text style={styles.loadingSubtitle}>Connecting to secure ballot database</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // STEP 3: VOTE SUCCESS CONFIRMATION
+  // ──────────────────────────────────────────────────────────
+  if (step === 'success') {
+    return (
+      <View style={styles.successScreen}>
+        <View style={styles.successCard}>
+          <View style={styles.successIconCircle}>
+            <Ionicons name="checkmark" size={44} color="#fff" />
+          </View>
+          <Text style={styles.successTitle}>Ballot Successfully Cast!</Text>
+          <Text style={styles.successElectionName}>
+            {selectedElection?.title}
+          </Text>
+          <Text style={styles.successDesc}>
+            Your selections have been securely encrypted and officially registered on the UniVote election ledger.
+          </Text>
+
+          {/* Verification Badge */}
+          <View style={styles.successReceiptBadge}>
+            <Ionicons name="shield-checkmark" size={16} color="#16A34A" />
+            <Text style={styles.successReceiptBadgeText}>Official Vote Receipt Generated</Text>
+          </View>
+
+          {/* Action Buttons */}
+          <TouchableOpacity
+            style={styles.viewReceiptBtn}
+            onPress={() => router.push('/(tabs)/(voter)/VoterVotes')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="receipt-outline" size={18} color="#fff" />
+            <Text style={styles.viewReceiptBtnText}>View My Ballot Receipt</Text>
+            <Ionicons name="arrow-forward" size={16} color="#fff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.backToElectionsBtn}
+            onPress={handleBack}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.backToElectionsBtnText}>Back to Elections List</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // STEP 2: ACTIVE BALLOT VOTING SCREEN
+  // ──────────────────────────────────────────────────────────
+  if (step === 'vote' && selectedElection) {
+    const canSubmit = allSelected && !submitting;
 
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
+        {/* Top Header Bar */}
+        <View style={styles.ballotHeader}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtn} activeOpacity={0.7}>
             <Ionicons name="arrow-back" size={22} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Cast Your Vote</Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.ballotHeaderCenter}>
+            <Text style={styles.ballotHeaderTitle}>Official Ballot</Text>
+            <Text style={styles.ballotHeaderSubtitle}>
+              {selectedCount} of {totalPositions} position{totalPositions !== 1 ? 's' : ''} selected
+            </Text>
+          </View>
+          <View style={styles.progressPill}>
+            <Text style={styles.progressPillText}>{Math.round(progressRatio * 100)}%</Text>
+          </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.banner}>
-            <Text style={styles.bannerTitle}>{selectedElection.title}</Text>
-            <Text style={styles.bannerSubtitle}>Select one candidate per position</Text>
+        {/* Live Progress Bar */}
+        <View style={styles.progressBarTrack}>
+          <View style={[styles.progressBarFill, { width: `${progressRatio * 100}%` }]} />
+        </View>
+
+        <ScrollView contentContainerStyle={styles.ballotContent} showsVerticalScrollIndicator={false}>
+          {/* Election Info Card */}
+          <View style={styles.electionOverviewCard}>
+            <View style={styles.electionBadgeRow}>
+              <View style={styles.officialPill}>
+                <Ionicons name="shield-checkmark" size={12} color="#065F46" />
+                <Text style={styles.officialPillText}>Campus Election</Text>
+              </View>
+              <View style={styles.activePill}>
+                <View style={styles.greenPulseDot} />
+                <Text style={styles.activePillText}>Voting Open</Text>
+              </View>
+            </View>
+            <Text style={styles.electionOverviewTitle}>{selectedElection.title}</Text>
+            <Text style={styles.electionOverviewDesc}>
+              {selectedElection.description || 'Select exactly one candidate for each contested position below.'}
+            </Text>
           </View>
 
+          {/* Facial Security Status Banner */}
           {facialRequired && facialConfig && (
-            <View style={[
-              styles.securityCard,
-              facialSessionToken ? styles.securityVerified : styles.securityPending,
-            ]}>
-              <Ionicons
-                name={facialSessionToken ? 'shield-checkmark' : 'shield-half-outline'}
-                size={20}
-                color={facialSessionToken ? Colors.success : Colors.primary}
-              />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={[
-                  styles.securityTitle,
-                  { color: facialSessionToken ? Colors.success : Colors.primary },
-                ]}>
-                  {facialSessionToken ? 'Identity Verified' :
-                    !facialConfig.is_enrolled ? 'Facial Enrollment Required' :
-                    !facialConfig.is_enabled ? 'Facial Verification Disabled' :
-                    'Facial Verification Pending'}
+            <View
+              style={[
+                styles.securityCard,
+                facialSessionToken ? styles.securityVerified : styles.securityPending,
+              ]}
+            >
+              <View
+                style={[
+                  styles.securityIconWrap,
+                  { backgroundColor: facialSessionToken ? '#DCFCE7' : '#FEF3C7' },
+                ]}
+              >
+                <Ionicons
+                  name={facialSessionToken ? 'shield-checkmark' : 'shield-half-outline'}
+                  size={20}
+                  color={facialSessionToken ? '#16A34A' : '#D97706'}
+                />
+              </View>
+              <View style={styles.securityTextCol}>
+                <Text
+                  style={[
+                    styles.securityTitle,
+                    { color: facialSessionToken ? '#065F46' : '#92400E' },
+                  ]}
+                >
+                  {facialSessionToken
+                    ? 'Biometric Identity Verified'
+                    : !facialConfig.is_enrolled
+                    ? 'Facial Enrollment Required'
+                    : 'Facial Verification Required'}
                 </Text>
                 <Text style={styles.securityDesc}>
                   {facialSessionToken
-                    ? 'Your identity has been confirmed. You may submit your vote.'
+                    ? 'Identity confirmed. You are ready to cast your ballot.'
                     : !facialConfig.is_enrolled
-                      ? 'Tap below to enroll your face. This is required before voting.'
-                      : !facialConfig.is_enabled
-                        ? 'Facial verification is currently disabled for your account.'
-                        : 'You must complete face verification before you can submit.'}
+                    ? 'Please enroll your face to unlock ballot submission.'
+                    : 'Face verification is required before casting your vote.'}
                 </Text>
               </View>
-              {!facialSessionToken && (facialConfig.is_enrolled ? facialConfig.is_enabled : true) && (
+              {!facialSessionToken && (
                 <TouchableOpacity
-                  style={styles.securityAction}
+                  style={styles.securityActionBtn}
                   onPress={openFacialVerify}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.securityActionText}>
-                    {facialConfig.is_enrolled ? 'Verify' : 'Enroll'}
+                  <Text style={styles.securityActionBtnText}>
+                    {facialConfig.is_enrolled ? 'Scan Face' : 'Enroll'}
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
           )}
 
-          {grouped.map((group) => (
-            <View key={group.position} style={styles.positionSection}>
-              <Text style={styles.positionTitle}>{group.position}</Text>
-              {group.candidates.map((c) => {
-                const isSelected = selections[group.position] === c.id;
-                return (
-                  <TouchableOpacity
-                    key={c.id}
-                    style={[styles.candidateCard, isSelected && styles.candidateCardActive]}
-                    onPress={() => handleSelectCandidate(group.position, c.id)}
-                    activeOpacity={0.8}
+          {/* Grouped Positions & Candidates */}
+          {ballotGroups.map((group, groupIdx) => {
+            const isPositionChosen = !!selections[group.position];
+
+            return (
+              <View key={group.position} style={styles.positionSection}>
+                {/* Position Section Header */}
+                <View style={styles.positionHeaderRow}>
+                  <View style={styles.positionTitleGroup}>
+                    <View
+                      style={[
+                        styles.positionNumberBadge,
+                        isPositionChosen && styles.positionNumberBadgeDone,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.positionNumberText,
+                          isPositionChosen && styles.positionNumberTextDone,
+                        ]}
+                      >
+                        {groupIdx + 1}
+                      </Text>
+                    </View>
+                    <Text style={styles.positionName}>{group.position}</Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.choiceStatusBadge,
+                      isPositionChosen ? styles.choiceStatusDone : styles.choiceStatusPending,
+                    ]}
                   >
-                    <View style={styles.radio}>
-                      {isSelected && <View style={styles.radioInner} />}
-                    </View>
-                    <View style={styles.candidateInfo}>
-                      <Text style={styles.candidateName}>{c.name}</Text>
-                      {c.description ? (
-                        <Text style={styles.candidateDesc}>{c.description}</Text>
-                      ) : null}
-                    </View>
-                    {isSelected && (
-                      <Ionicons name="checkmark-circle" size={22} color={Colors.primary} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          ))}
+                    <Ionicons
+                      name={isPositionChosen ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={13}
+                      color={isPositionChosen ? '#16A34A' : '#6B7280'}
+                    />
+                    <Text
+                      style={[
+                        styles.choiceStatusText,
+                        isPositionChosen ? styles.choiceStatusTextDone : styles.choiceStatusTextPending,
+                      ]}
+                    >
+                      {isPositionChosen ? 'Selected' : '1 Choice'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Candidate Selection Cards */}
+                <View style={styles.candidatesList}>
+                  {group.candidates.map((c) => {
+                    const isSelected = selections[group.position] === c.id;
+                    const avatar = getAvatarColors(c.name);
+                    const initials = getInitials(c.name);
+
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[
+                          styles.candidateCard,
+                          isSelected && styles.candidateCardSelected,
+                        ]}
+                        onPress={() => handleSelectCandidate(group.position, c.id)}
+                        activeOpacity={0.8}
+                      >
+                        {/* Radio Check Indicator */}
+                        <View style={[styles.customRadio, isSelected && styles.customRadioActive]}>
+                          {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                        </View>
+
+                        {/* Candidate Avatar */}
+                        <View style={[styles.candidateAvatarCircle, { backgroundColor: avatar.bg }]}>
+                          <Text style={[styles.candidateAvatarInitials, { color: avatar.text }]}>
+                            {initials}
+                          </Text>
+                        </View>
+
+                        {/* Candidate Details */}
+                        <View style={styles.candidateDetails}>
+                          <Text style={[styles.candidateName, isSelected && styles.candidateNameSelected]}>
+                            {c.name}
+                          </Text>
+                          {c.description ? (
+                            <Text style={styles.candidateDesc} numberOfLines={2}>
+                              {c.description}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Selected Pill */}
+                        {isSelected && (
+                          <View style={styles.selectedPill}>
+                            <Text style={styles.selectedPillText}>Chosen</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+
+        {/* ── Sticky Bottom Submission Bar ── */}
+        <View style={styles.bottomBar}>
+          <View style={styles.bottomBarMeta}>
+            <Text style={styles.bottomBarSummary}>
+              {allSelected
+                ? 'All positions selected'
+                : `${totalPositions - selectedCount} position${totalPositions - selectedCount !== 1 ? 's' : ''} left`}
+            </Text>
+            <Text style={styles.bottomBarSubtext}>
+              {allSelected && facialSessionToken
+                ? 'Ready to cast verified vote'
+                : allSelected && !facialSessionToken
+                ? 'Requires facial verification'
+                : 'Select one candidate per position'}
+            </Text>
+          </View>
 
           <TouchableOpacity
             style={[
-              styles.primaryBtn,
-              (!canSubmit) && styles.btnDisabled,
+              styles.submitVoteBtn,
+              !canSubmit && styles.submitVoteBtnDisabled,
             ]}
             onPress={handleSubmitVote}
             disabled={!canSubmit}
+            activeOpacity={0.85}
           >
             {submitting ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {facialRequired && facialConfig?.is_enabled && !facialSessionToken && facialConfig?.is_enrolled && (
-                  <Ionicons name="shield-outline" size={16} color="rgba(255,255,255,0.8)" style={{ marginRight: 6 }} />
+              <View style={styles.submitBtnInner}>
+                {facialRequired && facialConfig?.is_enabled && !facialSessionToken && (
+                  <Ionicons name="scan-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
                 )}
-                <Text style={styles.primaryBtnText}>
-                  {!allSelected ? 'Complete Selections' :
-                   facialRequired && facialConfig?.is_enabled && facialConfig?.is_enrolled && !facialSessionToken
-                     ? 'Verify Face & Submit'
-                     : 'Submit Vote'}
+                <Text style={styles.submitVoteBtnText}>
+                  {!allSelected
+                    ? `Choose All (${totalPositions - selectedCount} left)`
+                    : facialRequired && facialConfig?.is_enabled && !facialSessionToken
+                    ? 'Verify & Submit'
+                    : 'Cast My Ballot'}
                 </Text>
+                {allSelected && <Ionicons name="arrow-forward" size={16} color="#fff" style={{ marginLeft: 6 }} />}
               </View>
             )}
           </TouchableOpacity>
-        </ScrollView>
+        </View>
 
+        {/* Biometric Verification Modal */}
         <FaceVerificationModal
           visible={faceModalVisible}
           onClose={() => setFaceModalVisible(false)}
@@ -385,75 +604,198 @@ export default function VoterVoteScreen() {
     );
   }
 
+  // ──────────────────────────────────────────────────────────
+  // STEP 1: ELECTIONS LIST VIEW
+  // ──────────────────────────────────────────────────────────
+  const activeUnvotedCount = elections.filter((e) => !votedElections.has(e.id)).length;
+  const votedCount = votedElections.size;
+
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+      showsVerticalScrollIndicator={false}
     >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Vote Now</Text>
+      {/* ── Brand Top Bar ── */}
+      <View style={styles.topBar}>
+        <View style={styles.brandGroup}>
+          <Image source={require('../../../assets/univote-logo.jpg')} style={styles.brandLogo} />
+          <View>
+            <Text style={styles.brandTitle}>UniVote</Text>
+            <Text style={styles.brandSubtitle}>Active Ballot Center</Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={styles.refreshBtn}
+          onPress={onRefresh}
+          activeOpacity={0.7}
+          accessibilityLabel="Refresh active elections"
+        >
+          <Ionicons name="sync-outline" size={18} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.banner}>
-        <Text style={styles.bannerTitle}>Cast Your Vote</Text>
-        <Text style={styles.bannerSubtitle}>Select an election to cast your vote</Text>
+      {/* ── Hero Banner ── */}
+      <View style={styles.heroBanner}>
+        <View style={styles.heroContent}>
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.liveTag}>
+              <View style={styles.livePulseDot} />
+              <Text style={styles.liveTagText}>Official Ballot Hub</Text>
+            </View>
+            <View style={styles.secureTag}>
+              <Ionicons name="shield-checkmark" size={12} color="#A7F3D0" />
+              <Text style={styles.secureTagText}>Biometric Secured</Text>
+            </View>
+          </View>
+
+          <Text style={styles.heroTitle}>Vote in Elections</Text>
+          <Text style={styles.heroSubtitle}>
+            Select an active campus election to review candidates and securely cast your vote.
+          </Text>
+
+          {/* Quick Stats Row */}
+          <View style={styles.statPillsRow}>
+            <View style={styles.statPill}>
+              <Ionicons name="radio-button-on" size={14} color="#34D399" />
+              <Text style={styles.statPillVal}>{activeUnvotedCount}</Text>
+              <Text style={styles.statPillLabel}>Open to Vote</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statPill}>
+              <Ionicons name="checkmark-done-circle-outline" size={15} color="#fff" />
+              <Text style={styles.statPillVal}>{votedCount}</Text>
+              <Text style={styles.statPillLabel}>Voted</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statPill}>
+              <Ionicons name="lock-closed-outline" size={14} color="#fff" />
+              <Text style={styles.statPillVal}>Face ID</Text>
+              <Text style={styles.statPillLabel}>Protected</Text>
+            </View>
+          </View>
+        </View>
       </View>
 
+      {/* ── Elections List ── */}
       {elections.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No active elections at the moment</Text>
+        /* Empty State */
+        <View style={styles.emptyCard}>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="file-tray-outline" size={44} color={Colors.primary} />
+          </View>
+          <Text style={styles.emptyTitle}>No Active Elections</Text>
+          <Text style={styles.emptyDesc}>
+            There are no ongoing elections open for voting at the moment. Please check back later or view results of past elections.
+          </Text>
+          <TouchableOpacity
+            style={styles.viewResultsBtn}
+            onPress={() => router.push('/(tabs)/(voter)/VoterResults')}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="bar-chart-outline" size={16} color={Colors.primary} />
+            <Text style={styles.viewResultsBtnText}>View Past Results</Text>
+          </TouchableOpacity>
         </View>
       ) : (
-        elections.map((e) => {
-          const hasVoted = votedElections.has(e.id);
-          return (
-            <TouchableOpacity
-              key={e.id}
-              style={[styles.card, hasVoted && styles.cardVoted]}
-              onPress={() => handleSelectElection(e)}
-              activeOpacity={0.85}
-            >
-              <View style={styles.cardTop}>
-                <View style={styles.cardIcon}>
-                  <Ionicons name="business-outline" size={20} color={Colors.primary} />
-                </View>
-                <View style={[styles.badge, hasVoted ? styles.badgeVoted : styles.badgeActive]}>
-                  <View style={[styles.dot, hasVoted ? styles.dotVoted : styles.dotActive]} />
-                  <Text style={[styles.badgeText, hasVoted && styles.badgeTextVoted]}>
-                    {hasVoted ? 'Voted' : 'Active'}
-                  </Text>
-                </View>
-              </View>
+        /* Election Cards */
+        <View style={styles.cardsList}>
+          {elections.map((e) => {
+            const hasVoted = votedElections.has(e.id);
+            const candidateCount = e.candidates?.length || 0;
 
-              <Text style={styles.cardTitle}>{e.title}</Text>
-              <Text style={styles.cardDesc}>{e.description || 'No description available'}</Text>
-
-              <View style={styles.metaRow}>
-                <View style={styles.metaItem}>
-                  <Ionicons name="people-outline" size={12} color="#8899aa" />
-                  <Text style={styles.metaText}>{e.candidates?.length || 0} Candidates</Text>
-                </View>
-                {facialRequired && (
-                  <View style={styles.metaItem}>
-                    <Ionicons name="shield-outline" size={12} color={Colors.primary} />
-                    <Text style={[styles.metaText, { color: Colors.primary }]}>Face ID Secured</Text>
+            return (
+              <View key={e.id} style={[styles.electionCard, hasVoted && styles.electionCardVoted]}>
+                {/* Card Top Row */}
+                <View style={styles.cardTopRow}>
+                  <View style={styles.cardIconWrap}>
+                    <Ionicons
+                      name={hasVoted ? 'checkmark-circle' : 'reader-outline'}
+                      size={20}
+                      color={hasVoted ? '#16A34A' : Colors.primary}
+                    />
                   </View>
+                  <View style={styles.cardHeaderInfo}>
+                    <Text style={styles.cardElectionTitle}>{e.title}</Text>
+                    {e.description ? (
+                      <Text style={styles.cardDesc} numberOfLines={2}>
+                        {e.description}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View
+                    style={[
+                      styles.cardStatusPill,
+                      hasVoted ? styles.cardStatusPillVoted : styles.cardStatusPillActive,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.statusDot,
+                        hasVoted ? styles.statusDotVoted : styles.statusDotActive,
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.cardStatusText,
+                        hasVoted ? styles.cardStatusTextVoted : styles.cardStatusTextActive,
+                      ]}
+                    >
+                      {hasVoted ? 'Voted' : 'Open'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Card Meta Row */}
+                <View style={styles.cardMetaRow}>
+                  <View style={styles.metaBadge}>
+                    <Ionicons name="people-outline" size={12} color="#6B7280" />
+                    <Text style={styles.metaBadgeText}>{candidateCount} Candidate{candidateCount !== 1 ? 's' : ''}</Text>
+                  </View>
+                  <View style={styles.metaBadge}>
+                    <Ionicons name="shield-checkmark-outline" size={12} color={Colors.primary} />
+                    <Text style={[styles.metaBadgeText, { color: Colors.primary }]}>Facial ID Secured</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardDivider} />
+
+                {/* Card Button: Smart Navigation */}
+                {hasVoted ? (
+                  <TouchableOpacity
+                    style={styles.viewBallotBtn}
+                    onPress={() => router.push('/(tabs)/(voter)/VoterVotes')}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="receipt-outline" size={15} color="#16A34A" />
+                    <Text style={styles.viewBallotBtnText}>View My Cast Ballot</Text>
+                    <Ionicons name="chevron-forward" size={14} color="#16A34A" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.voteNowBtn}
+                    onPress={() => handleSelectElection(e)}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="checkbox-outline" size={16} color="#fff" />
+                    <Text style={styles.voteNowBtnText}>Open Ballot & Vote</Text>
+                    <Ionicons name="arrow-forward" size={15} color="#fff" />
+                  </TouchableOpacity>
                 )}
               </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.voteBtn}>
-                <Text style={styles.voteBtnText}>
-                  {hasVoted ? 'View Election' : 'Vote Now'}
-                </Text>
-                <Ionicons name="arrow-forward" size={14} color="#fff" style={styles.voteBtnIcon} />
-              </View>
-            </TouchableOpacity>
-          );
-        })
+            );
+          })}
+        </View>
       )}
+
+      {/* Security Assurance */}
+      <View style={styles.securityFooter}>
+        <Ionicons name="lock-closed" size={13} color="#9CA3AF" />
+        <Text style={styles.securityFooterText}>
+          One student, one vote. Biometrically verified to prevent duplicate voting.
+        </Text>
+      </View>
     </ScrollView>
   );
 }
@@ -461,230 +803,886 @@ export default function VoterVoteScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F7FA',
+    backgroundColor: '#F3F4F6',
   },
   content: {
-    paddingBottom: 32,
+    paddingBottom: 40,
   },
 
-  header: {
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    padding: 24,
+  },
+  loadingBox: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+    maxWidth: 320,
+    width: '100%',
+  },
+  loadingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  loadingSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+
+  // Top Bar
+  topBar: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  headerTitle: {
-    fontSize: 18,
+  brandGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  brandLogo: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+  },
+  brandTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  brandSubtitle: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.75)',
+  },
+  refreshBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Hero Banner
+  heroBanner: {
+    backgroundColor: Colors.primary,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  heroContent: {
+    position: 'relative',
+    zIndex: 1,
+  },
+  heroBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  liveTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#064E3B',
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    gap: 6,
+  },
+  livePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#34D399',
+  },
+  liveTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#A7F3D0',
+    letterSpacing: 0.3,
+  },
+  secureTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
+  },
+  secureTagText: {
+    fontSize: 11,
     fontWeight: '700',
     color: '#fff',
   },
-
-  banner: {
-    backgroundColor: Colors.primary,
-    borderRadius: 20,
-    marginHorizontal: 20,
-    marginTop: 16,
-    marginBottom: 20,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  bannerTitle: {
-    fontSize: 20,
+  heroTitle: {
+    fontSize: 24,
     fontWeight: '800',
     color: '#fff',
-    marginBottom: 6,
+    letterSpacing: -0.3,
+    marginBottom: 4,
   },
-  bannerSubtitle: {
+  heroSubtitle: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.85)',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  statPillsRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  statPill: {
+    alignItems: 'center',
+    gap: 2,
+    flex: 1,
+  },
+  statPillVal: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  statPillLabel: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '600',
+  },
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255,255,255,0.25)',
   },
 
-  securityCard: {
-    marginHorizontal: 20,
-    marginBottom: 18,
-    borderRadius: 14,
-    padding: 14,
+  // Elections List
+  cardsList: {
+    paddingHorizontal: 16,
+    marginTop: 16,
+    gap: 12,
+  },
+  electionCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  electionCardVoted: {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#D1FAE5',
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  cardIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  cardHeaderInfo: {
+    flex: 1,
+  },
+  cardElectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111827',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  cardDesc: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 16,
+  },
+  cardStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 4,
+  },
+  cardStatusPillActive: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  cardStatusPillVoted: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusDotActive: {
+    backgroundColor: '#10B981',
+  },
+  statusDotVoted: {
+    backgroundColor: '#3B82F6',
+  },
+  cardStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cardStatusTextActive: {
+    color: '#065F46',
+  },
+  cardStatusTextVoted: {
+    color: '#1E40AF',
+  },
+  cardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  metaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  metaBadgeText: {
+    fontSize: 11,
+    color: '#4B5563',
+    fontWeight: '600',
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginVertical: 12,
+  },
+  voteNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 11,
+    gap: 6,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  voteNowBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  viewBallotBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0FDF4',
+    borderRadius: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    gap: 6,
+  },
+  viewBallotBtnText: {
+    color: '#16A34A',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Empty State
+  emptyCard: {
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    marginHorizontal: 16,
+    marginTop: 24,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  emptyDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+    maxWidth: 280,
+  },
+  viewResultsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  viewResultsBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+
+  // ──────────────────────────────────────────────
+  // BALLOT VOTING SCREEN (step === 'vote')
+  // ──────────────────────────────────────────────
+  ballotHeader: {
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+  },
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ballotHeaderCenter: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  ballotHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  ballotHeaderSubtitle: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 1,
+  },
+  progressPill: {
+    backgroundColor: '#064E3B',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  progressPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#34D399',
+  },
+  progressBarTrack: {
+    height: 4,
+    backgroundColor: 'rgba(0,0,0,0.12)',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#34D399',
+  },
+  ballotContent: {
+    paddingBottom: 100, // Space for sticky bottom bar
+  },
+  electionOverviewCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    marginHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  electionBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  officialPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  officialPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  activePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  greenPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  activePillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  electionOverviewTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  electionOverviewDesc: {
+    fontSize: 12,
+    color: '#6B7280',
+    lineHeight: 17,
+  },
+
+  // Security Card
+  securityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 14,
+    padding: 12,
+    borderRadius: 16,
     borderWidth: 1,
   },
   securityPending: {
-    backgroundColor: Colors.primaryBg,
-    borderColor: Colors.primary,
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
   },
   securityVerified: {
-    backgroundColor: '#E8F5E9',
-    borderColor: Colors.success,
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  securityIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  securityTextCol: {
+    flex: 1,
+    marginLeft: 10,
+    marginRight: 6,
   },
   securityTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     marginBottom: 2,
   },
   securityDesc: {
-    fontSize: 11,
-    color: '#556677',
+    fontSize: 10,
+    color: '#6B7280',
     lineHeight: 14,
   },
-  securityAction: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  securityActionBtn: {
+    backgroundColor: '#D97706',
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    marginLeft: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
-  securityActionText: {
-    color: Colors.primary,
+  securityActionBtnText: {
+    fontSize: 11,
     fontWeight: '700',
-    fontSize: 12,
+    color: '#fff',
   },
 
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 18,
-    marginHorizontal: 20,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+  // Position Section
+  positionSection: {
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
-  cardTop: {
+  positionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
   },
-  cardIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.primaryBg,
+  positionTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  positionNumberBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#E5E7EB',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  positionNumberBadgeDone: {
+    backgroundColor: '#16A34A',
   },
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.primary,
-  },
-  activeText: {
+  positionNumberText: {
     fontSize: 11,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  cardTitle: {
-    fontSize: 16,
     fontWeight: '800',
-    color: '#1a2a3a',
-    marginBottom: 6,
+    color: '#4B5563',
   },
-  cardDesc: {
-    fontSize: 13,
-    color: '#667788',
-    lineHeight: 18,
-    marginBottom: 12,
+  positionNumberTextDone: {
+    color: '#fff',
   },
-  metaRow: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 14,
+  positionName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#111827',
   },
-  metaItem: {
+  choiceStatusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
     gap: 4,
   },
-  metaText: {
-    fontSize: 12,
-    color: '#8899aa',
-    fontWeight: '600',
+  choiceStatusDone: {
+    backgroundColor: '#DCFCE7',
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#F0F2F5',
-    marginBottom: 14,
+  choiceStatusPending: {
+    backgroundColor: '#F3F4F6',
   },
-  voteBtn: {
-    height: 48,
-    backgroundColor: Colors.primary,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  voteBtnText: {
-    color: '#fff',
-    fontSize: 15,
+  choiceStatusText: {
+    fontSize: 10,
     fontWeight: '700',
   },
-  voteBtnIcon: {
-    marginTop: 1,
+  choiceStatusTextDone: {
+    color: '#15803D',
   },
-  emptyState: {
-    padding: 40,
-    alignItems: 'center',
+  choiceStatusTextPending: {
+    color: '#6B7280',
   },
-  emptyText: {
-    fontSize: 16,
-    color: '#8899aa',
-    textAlign: 'center',
+
+  // Candidate Cards
+  candidatesList: {
+    gap: 8,
   },
-  successCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: Colors.success, justifyContent: 'center', alignItems: 'center',
-    marginBottom: 20,
-  },
-  successTitle: { fontSize: 22, fontWeight: '800', color: '#1a2a3a', marginBottom: 8 },
-  successDesc: { fontSize: 14, color: '#667788', textAlign: 'center', marginBottom: 28 },
-  backBtn: { padding: 4 },
-  positionSection: { marginHorizontal: 20, marginBottom: 20 },
-  positionTitle: { fontSize: 16, fontWeight: '700', color: '#1a2a3a', marginBottom: 10 },
   candidateCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 8,
-    borderWidth: 1.5, borderColor: '#E8EDF2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  candidateCardActive: { borderColor: Colors.primary, backgroundColor: '#F0F7F0' },
-  radio: {
-    width: 22, height: 22, borderRadius: 11,
-    borderWidth: 2, borderColor: '#ccd5df', justifyContent: 'center', alignItems: 'center',
+  candidateCardSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: '#F0FDF4',
+    shadowColor: Colors.primary,
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  customRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  customRadioActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primary,
+  },
+  candidateAvatarCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  candidateAvatarInitials: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  candidateDetails: {
+    flex: 1,
+    marginRight: 6,
+  },
+  candidateName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  candidateNameSelected: {
+    color: '#111827',
+  },
+  candidateDesc: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  selectedPill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  selectedPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+
+  // Sticky Bottom Bar
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  bottomBarMeta: {
+    flex: 1,
     marginRight: 12,
   },
-  radioInner: { width: 12, height: 12, borderRadius: 6, backgroundColor: Colors.primary },
-  candidateInfo: { flex: 1 },
-  candidateName: { fontSize: 15, fontWeight: '700', color: '#1a2a3a' },
-  candidateDesc: { fontSize: 12, color: '#8899aa', marginTop: 2 },
-  primaryBtn: {
-    height: 52, backgroundColor: Colors.primary,
-    borderRadius: 26, justifyContent: 'center', alignItems: 'center',
-    marginHorizontal: 20, marginTop: 8, marginBottom: 24,
+  bottomBarSummary: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#111827',
   },
-  btnDisabled: { opacity: 0.6 },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  cardVoted: { opacity: 0.85 },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  badgeActive: { backgroundColor: '#E8F5E9' },
-  badgeVoted: { backgroundColor: '#E3F2FD' },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  dotActive: { backgroundColor: Colors.primary },
-  dotVoted: { backgroundColor: '#1976D2' },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  badgeTextVoted: { color: '#1976D2' },
+  bottomBarSubtext: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  submitVoteBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  submitVoteBtnDisabled: {
+    backgroundColor: '#9CA3AF',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  submitBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  submitVoteBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  // ──────────────────────────────────────────────
+  // SUCCESS SCREEN
+  // ──────────────────────────────────────────────
+  successScreen: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  successCard: {
+    backgroundColor: '#fff',
+    borderRadius: 28,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 360,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  successIconCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#16A34A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  successElectionName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  successDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  successReceiptBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginBottom: 22,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  successReceiptBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  viewReceiptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 20,
+    gap: 8,
+    width: '100%',
+    marginBottom: 12,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  viewReceiptBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  backToElectionsBtn: {
+    paddingVertical: 8,
+  },
+  backToElectionsBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+
+  // Security Footer
+  securityFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 20,
+    paddingHorizontal: 20,
+  },
+  securityFooterText: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 15,
+  },
 });

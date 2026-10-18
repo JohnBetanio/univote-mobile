@@ -21,7 +21,7 @@ class VoteController extends Controller
         }
 
         $votes = Vote::where('voter_id', $user->id)
-            ->with(['election', 'candidate.position'])
+            ->with(['election.organization', 'candidate.position'])
             ->get();
 
         return response()->json($votes->map(function ($vote) {
@@ -34,11 +34,14 @@ class VoteController extends Controller
                 'election' => [
                     'id' => $vote->election->id,
                     'title' => $vote->election->title,
+                    'status' => $vote->election->status,
+                    'organization' => $vote->election->organization?->name,
                 ],
                 'candidate' => [
                     'id' => $vote->candidate->id,
                     'name' => $vote->candidate->name,
-                    'position' => $vote->candidate->position->name,
+                    'position' => $vote->candidate->position?->name ?? 'Candidate',
+                    'photo' => $vote->candidate->photo,
                 ],
             ];
         }));
