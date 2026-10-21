@@ -19,42 +19,12 @@ import { Colors } from '@/constants/Colors';
 import { api } from '@/services/api';
 import FaceVerificationModal from '@/components/FaceVerificationModal';
 
-function PasswordStrength({ password }: { password: string }) {
-  if (!password) return null;
-  const score = password.length < 6 ? 1 : password.length < 10 ? 2 : 3;
-  const labels = ['', 'Weak', 'Fair', 'Strong'];
-  const barColors = ['', Colors.error, Colors.warning, Colors.success];
-
-  return (
-    <View style={styles.strengthRow}>
-      {[1, 2, 3].map((item) => (
-        <View
-          key={item}
-          style={[
-            styles.strengthBar,
-            { backgroundColor: item <= score ? barColors[score] : '#e0e0e0' },
-          ]}
-        />
-      ))}
-      <Text style={[styles.strengthLabel, { color: barColors[score] }]}>
-        {labels[score]}
-      </Text>
-    </View>
-  );
-}
-
 export default function GoogleSetupScreen() {
   const { user, completeProfileSetup, finishRegistration, logout } = useAuth();
   const router = useRouter();
 
   // If user profile is already saved, default to face enrollment step (step 2)
   const [step, setStep] = useState<number>(user?.is_profile_completed ? 2 : 1);
-
-  // App-exclusive password
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   // Profile details
   const [fullName, setFullName] = useState('');
@@ -64,7 +34,7 @@ export default function GoogleSetupScreen() {
   const [yearLevel, setYearLevel] = useState('1st Year');
   const [organizationId, setOrganizationId] = useState<number | undefined>();
 
-  // Organizations
+  // College Departments (Organizations)
   const [organizations, setOrganizations] = useState<{ id: number; name: string; code: string }[]>([]);
   const [organizationsLoading, setOrganizationsLoading] = useState(true);
   const [organizationsError, setOrganizationsError] = useState('');
@@ -81,10 +51,10 @@ export default function GoogleSetupScreen() {
       if (response.data && Array.isArray(response.data)) {
         setOrganizations(response.data);
       } else {
-        setOrganizationsError('Organizations are unavailable. Please contact an administrator.');
+        setOrganizationsError('College departments are unavailable. Please contact an administrator.');
       }
     } catch {
-      setOrganizationsError('Failed to load organizations. Please check your connection.');
+      setOrganizationsError('Failed to load college departments. Please check your connection.');
     } finally {
       setOrganizationsLoading(false);
     }
@@ -95,21 +65,7 @@ export default function GoogleSetupScreen() {
   }, []);
 
   const handleSaveAndProceedToFaceScan = async () => {
-    // 1. Password validation
-    if (!password || !confirmPassword) {
-      Alert.alert('Missing Password', 'Please create and confirm your app-exclusive password.');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Weak Password', 'App password must be at least 6 characters long.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match. Please verify and try again.');
-      return;
-    }
-
-    // 2. Profile validation
+    // Profile validation
     if (!fullName.trim()) {
       Alert.alert('Missing Field', 'Please enter your full name.');
       return;
@@ -123,13 +79,12 @@ export default function GoogleSetupScreen() {
       return;
     }
     if (!organizationId) {
-      Alert.alert('Missing Field', 'Please select your student organization.');
+      Alert.alert('Missing Field', 'Please select your college department.');
       return;
     }
 
     setSaving(true);
     const result = await completeProfileSetup({
-      password,
       fullName: fullName.trim(),
       age: Number(age),
       sex,
@@ -163,9 +118,18 @@ export default function GoogleSetupScreen() {
           },
         ]
       );
-    } catch {
+    } catch (err: any) {
       setFaceModalVisible(false);
-      router.replace('/(tabs)/(voter)/VoterDashboard');
+      Alert.alert(
+        'Setup Incomplete',
+        err?.message || 'Could not verify account activation. Please complete face verification to proceed.',
+        [
+          {
+            text: 'Retry Face Scan',
+            onPress: () => setFaceModalVisible(true),
+          },
+        ]
+      );
     }
   };
 
@@ -206,8 +170,6 @@ export default function GoogleSetupScreen() {
     );
   };
 
-  const pwMismatch = confirmPassword.length > 0 && password !== confirmPassword;
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -237,9 +199,9 @@ export default function GoogleSetupScreen() {
 
           {step === 1 ? (
             <>
-              <Text style={styles.title}>Account Registration</Text>
+              <Text style={styles.title}>Student Profile Setup</Text>
               <Text style={styles.subtitle}>
-                Please create your app password and fill in your student details before face verification.
+                Please fill in your student details before face verification.
               </Text>
 
               {/* Connected Google Account pill */}
@@ -254,71 +216,10 @@ export default function GoogleSetupScreen() {
                 <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
               </View>
 
-              {/* Section 1: App Exclusive Password */}
-              <View style={styles.sectionHeader}>
-                <Ionicons name="key-outline" size={16} color={Colors.primaryLight} />
-                <Text style={styles.sectionTitle}>1. Create App-Exclusive Password</Text>
-              </View>
-              <Text style={styles.sectionDesc}>
-                Use this password to log in directly with your Gmail address on any device.
-              </Text>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>App-Exclusive Password</Text>
-                <View style={styles.pwRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Create a password (min. 6 characters)"
-                    placeholderTextColor={Colors.textMuted}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeBtn}
-                    onPress={() => setShowPassword((v) => !v)}
-                  >
-                    <Ionicons
-                      name={showPassword ? 'eye-off' : 'eye'}
-                      size={20}
-                      color={Colors.primary}
-                    />
-                  </TouchableOpacity>
-                </View>
-                <PasswordStrength password={password} />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Confirm App Password</Text>
-                <View style={styles.pwRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }, pwMismatch && styles.inputError]}
-                    placeholder="Re-enter your app password"
-                    placeholderTextColor={Colors.textMuted}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry={!showConfirm}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeBtn}
-                    onPress={() => setShowConfirm((v) => !v)}
-                  >
-                    <Ionicons
-                      name={showConfirm ? 'eye-off' : 'eye'}
-                      size={20}
-                      color={Colors.primary}
-                    />
-                  </TouchableOpacity>
-                </View>
-                {pwMismatch && (
-                  <Text style={styles.errorText}>Passwords do not match</Text>
-                )}
-              </View>
-
-              {/* Section 2: Student Details */}
+              {/* Student Details */}
               <View style={[styles.sectionHeader, { marginTop: 12 }]}>
                 <Ionicons name="person-outline" size={16} color={Colors.primaryLight} />
-                <Text style={styles.sectionTitle}>2. Student Information</Text>
+                <Text style={styles.sectionTitle}>Student Information</Text>
               </View>
 
               <View style={styles.field}>
@@ -404,11 +305,11 @@ export default function GoogleSetupScreen() {
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.label}>Organization</Text>
+                <Text style={styles.label}>College Department</Text>
                 {organizationsLoading ? (
                   <View style={styles.loadingBox}>
                     <ActivityIndicator color={Colors.primaryLight} />
-                    <Text style={styles.loadingBoxText}>Loading organizations...</Text>
+                    <Text style={styles.loadingBoxText}>Loading college departments...</Text>
                   </View>
                 ) : organizations.length > 0 ? (
                   <View style={styles.choiceRow}>
@@ -435,7 +336,7 @@ export default function GoogleSetupScreen() {
                 ) : (
                   <View style={styles.organizationEmpty}>
                     <Text style={styles.organizationEmptyText}>
-                      {organizationsError || 'No organizations found. Please ask an admin to add your organization.'}
+                      {organizationsError || 'No college departments found. Please ask an administrator to add your department.'}
                     </Text>
                     <TouchableOpacity onPress={loadOrganizations} style={{ marginTop: 6 }}>
                       <Text style={styles.retryText}>Retry Loading</Text>

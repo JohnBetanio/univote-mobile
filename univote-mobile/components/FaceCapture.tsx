@@ -13,6 +13,7 @@ import {
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
+import { api, FaceQualityResult } from '@/services/api';
 
 export type FaceCaptureMode = 'enroll' | 'verify';
 
@@ -33,7 +34,13 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
   const facing: CameraType = 'front';
   const [capturing, setCapturing] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
+  const [capturedBase64, setCapturedBase64] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [qualityResult, setQualityResult] = useState<FaceQualityResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationSuccess, setValidationSuccess] = useState(false);
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const countdownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -123,29 +130,53 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
   const takePhoto = useCallback(async () => {
     if (!cameraRef.current) return;
     setCapturing(true);
+    setValidationSuccess(false);
+    setValidationMessage(null);
     try {
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.65,
+        quality: 0.80,
         base64: true,
         skipProcessing: false,
       });
 
       if (photo && photo.base64) {
-        const qualityScore = estimateQuality(photo.base64);
         setPreviewUri(photo.uri || null);
-        setTimeout(() => {
-          onCapture(photo.base64!, qualityScore);
-        }, 300);
+        setCapturedBase64(photo.base64);
+        setCapturing(false);
+        setIsValidating(true);
+        setValidationMessage('Validating face position & quality…');
+
+        const res = await api.detectFaceQuality(photo.base64);
+        setIsValidating(false);
+
+        if (res.data && res.data.valid) {
+          setValidationSuccess(true);
+          setValidationMessage('Face detected clearly. Tap Continue.');
+          setQualityResult(res.data);
+        } else {
+          setValidationSuccess(false);
+          const err = res.data?.error || res.error || 'Please position your full face clearly inside the oval frame.';
+          setValidationMessage(err);
+          setQualityResult(res.data || null);
+        }
       } else {
-        // No face data — silently reset (ignore if no face detected)
         setCapturing(false);
       }
     } catch (err) {
       console.error('Capture error:', err);
-      // Silently reset instead of showing alert
       setCapturing(false);
+      setIsValidating(false);
+      setValidationSuccess(false);
+      setValidationMessage('Camera capture failed. Please try again.');
     }
-  }, [onCapture]);
+  }, []);
+
+  const handleContinue = useCallback(() => {
+    if (!capturedBase64 || !validationSuccess) return;
+    setIsSubmitting(true);
+    const score = qualityResult?.quality ? qualityResult.quality.sharpness / 100 : 0.85;
+    onCapture(capturedBase64, score);
+  }, [capturedBase64, validationSuccess, qualityResult, onCapture]);
 
   const startCountdown = useCallback(() => {
     setCountdown(3);
@@ -163,16 +194,14 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
     countdownRef.current = setTimeout(tick, 800);
   }, [takePhoto]);
 
-  const estimateQuality = (base64: string): number => {
-    const len = base64.length;
-    const rough = Math.min(1, len / 60000);
-    const jitter = (Date.now() % 100) / 500;
-    return Math.max(0.55, Math.min(0.98, rough + jitter));
-  };
-
   const retake = () => {
     setPreviewUri(null);
+    setCapturedBase64(null);
+    setQualityResult(null);
+    setValidationMessage(null);
+    setValidationSuccess(false);
     setCapturing(false);
+    setIsSubmitting(false);
   };
 
   // Derived animated values
@@ -282,12 +311,24 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
 
           {/* Status badge */}
           <View style={styles.statusBadge} pointerEvents="none">
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>
-              {countdown !== null
+            <View
+              style={[
+                styles.statusDot,
+                validationSuccess && { backgroundColor: Colors.success },
+                (!validationSuccess && !isValidating && validationMessage !== null) && { backgroundColor: Colors.error },
+              ]}
+            />
+            <Text style={styles.statusText} numberOfLines={2}>
+              {previewUri
+                ? (isValidating
+                    ? 'Validating face position & quality…'
+                    : validationSuccess
+                    ? 'Face detected clearly. Tap Continue.'
+                    : validationMessage || 'Position your face inside the oval guide.')
+                : countdown !== null
                 ? `Hold still… ${countdown}`
                 : capturing
-                ? 'Analyzing face quality & alignment…'
+                ? 'Analyzing face quality…'
                 : 'Fit full face inside the oval'}
             </Text>
           </View>
@@ -319,16 +360,22 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
       {/* ── Instruction pill ── */}
       <View style={styles.instructionBox}>
         <Ionicons
-          name="shield-checkmark-outline"
+          name={validationSuccess ? 'checkmark-circle' : 'shield-checkmark-outline'}
           size={18}
-          color={Colors.primary}
+          color={validationSuccess ? Colors.success : Colors.primary}
           style={styles.instrIcon}
         />
         <Text style={styles.instructionText}>
-          {instruction ||
-            (mode === 'enroll'
-              ? 'Keep your full face inside the oval. Hold steady to avoid blur and look directly at camera.'
-              : 'Fit your face in the oval to verify identity. Face must match your registered profile.')}
+          {previewUri
+            ? (isValidating
+                ? 'Validating face inside circle guide, checking lighting and sharpness…'
+                : validationSuccess
+                ? 'Validation passed! One clear, properly positioned face detected. Tap Continue.'
+                : validationMessage || 'Keep your full face inside the oval. Hold steady to avoid blur.')
+            : instruction ||
+              (mode === 'enroll'
+                ? 'Keep your full face inside the oval. Hold steady to avoid blur and look directly at camera.'
+                : 'Fit your face in the oval to verify identity. Face must match your registered profile.')}
         </Text>
       </View>
 
@@ -336,15 +383,24 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
       <View style={styles.bottomBar}>
         {previewUri ? (
           <>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={retake}>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={retake} disabled={isSubmitting}>
               <Ionicons name="refresh-outline" size={18} color={Colors.primary} />
               <Text style={styles.secondaryBtnText}>Retake</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.primaryBtn, styles.primaryBtnCompact]}
-              onPress={() => {}}
+              style={[
+                styles.primaryBtn,
+                styles.primaryBtnCompact,
+                (!validationSuccess || isValidating || isSubmitting) && styles.btnDisabled,
+              ]}
+              onPress={handleContinue}
+              disabled={!validationSuccess || isValidating || isSubmitting}
             >
-              <Text style={styles.primaryBtnText}>Processing</Text>
+              {isSubmitting || isValidating ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryBtnText}>Continue</Text>
+              )}
             </TouchableOpacity>
           </>
         ) : (
@@ -636,6 +692,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  btnDisabled: {
+    opacity: 0.45,
+    backgroundColor: '#94a3b8',
   },
   secondaryBtn: {
     width: 80,

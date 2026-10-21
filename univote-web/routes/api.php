@@ -32,6 +32,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Facial Verification routes
     Route::prefix('facial')->group(function () {
         Route::get('/config', [FacialVerificationController::class, 'getConfig']);
+        Route::post('/detect-quality', [FacialVerificationController::class, 'detectQuality']);
         Route::post('/enroll', [FacialVerificationController::class, 'enroll']);
         Route::post('/verify', [FacialVerificationController::class, 'verify'])
             ->middleware('throttle:facial-verify');

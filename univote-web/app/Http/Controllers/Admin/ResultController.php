@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Election;
+use App\Models\Voter;
 use Illuminate\Http\Request;
 
 class ResultController extends Controller
@@ -15,7 +16,7 @@ class ResultController extends Controller
         }
 
         // Only query finished elections (exclude draft, upcoming, active, cancelled)
-        $query = Election::with(['organization', 'positions.candidates.votes'])
+        $query = Election::with(['organization', 'positions.candidates.votes', 'votes'])
             ->where(function ($q) {
                 $q->whereIn('status', ['ended', 'closed'])
                     ->orWhere(function ($sub) {
@@ -36,6 +37,24 @@ class ResultController extends Controller
 
         $elections = $query->latest('end_date')->latest('created_at')->get();
 
+        // Sort by org if requested (default is org sorting)
+        $sortBy = $request->query('sort', 'org');
+        $elections = $elections->sort(function ($a, $b) use ($sortBy) {
+            if ($sortBy === 'newest') {
+                return ($b->end_date ?? $b->created_at) <=> ($a->end_date ?? $a->created_at);
+            }
+            if ($sortBy === 'turnout') {
+                return $b->votes->count() <=> $a->votes->count();
+            }
+            // Sort by org name (A-Z)
+            $orgA = $a->organization ? strtolower($a->organization->name) : 'zzz';
+            $orgB = $b->organization ? strtolower($b->organization->name) : 'zzz';
+            if ($orgA === $orgB) {
+                return ($b->end_date ?? $b->created_at) <=> ($a->end_date ?? $a->created_at);
+            }
+            return $orgA <=> $orgB;
+        })->values();
+
         $results = $elections->map(function ($election) {
             $positions = $election->positions->map(function ($position) {
                 $candidates = $position->candidates()->withCount('votes')->get();
@@ -55,6 +74,40 @@ class ResultController extends Controller
                 ];
             })->values();
 
+            // Total unique voters who actually cast a ballot in this election
+            $totalVotersWhoVoted = $election->votes()->distinct('voter_id')->count('voter_id');
+            $totalVotesCast = $election->votes()->count();
+
+            // Total eligible voters in that organization (or university-wide)
+            $totalEligibleVoters = $election->organization_id
+                ? Voter::where('organization_id', $election->organization_id)->count()
+                : Voter::count();
+
+            $turnoutPercentage = $totalEligibleVoters > 0
+                ? round(($totalVotersWhoVoted / $totalEligibleVoters) * 100, 1)
+                : 0.0;
+
+            // Compute declared winners per position
+            $winners = [];
+            foreach ($positions as $pos) {
+                $cands = $pos['candidates'];
+                if ($cands->isNotEmpty()) {
+                    $top = $cands->first();
+                    if ($top['vote_count'] > 0) {
+                        $isTie = $cands->count() > 1 && $cands[1]['vote_count'] === $top['vote_count'];
+                        $winners[] = [
+                            'position_id' => $pos['id'],
+                            'position_name' => $pos['name'],
+                            'candidate_id' => $top['id'],
+                            'candidate_name' => $top['name'],
+                            'vote_count' => $top['vote_count'],
+                            'percentage' => $top['percentage'],
+                            'is_tie' => $isTie,
+                        ];
+                    }
+                }
+            }
+
             $endedDate = $election->end_date ?? $election->updated_at;
 
             return [
@@ -72,6 +125,11 @@ class ResultController extends Controller
                 'end_date' => $endedDate ? $endedDate->toIso8601String() : null,
                 'created_at_formatted' => $election->created_at ? $election->created_at->format('F j, Y — g:i A') : null,
                 'end_date_formatted' => $endedDate ? $endedDate->format('F j, Y — g:i A') : null,
+                'total_voters_who_voted' => $totalVotersWhoVoted,
+                'total_votes_cast' => $totalVotesCast,
+                'total_eligible_voters' => $totalEligibleVoters,
+                'turnout_percentage' => $turnoutPercentage,
+                'winners' => $winners,
                 'positions' => $positions,
             ];
         });
@@ -83,7 +141,7 @@ class ResultController extends Controller
 
     public function show(Election $election)
     {
-        $election->load(['organization', 'positions.candidates.votes']);
+        $election->load(['organization', 'positions.candidates.votes', 'votes']);
 
         $positions = $election->positions->map(function ($position) {
             $candidates = $position->candidates()->withCount('votes')->get();
@@ -103,6 +161,35 @@ class ResultController extends Controller
             ];
         })->values();
 
+        $totalVotersWhoVoted = $election->votes()->distinct('voter_id')->count('voter_id');
+        $totalVotesCast = $election->votes()->count();
+        $totalEligibleVoters = $election->organization_id
+            ? Voter::where('organization_id', $election->organization_id)->count()
+            : Voter::count();
+        $turnoutPercentage = $totalEligibleVoters > 0
+            ? round(($totalVotersWhoVoted / $totalEligibleVoters) * 100, 1)
+            : 0.0;
+
+        $winners = [];
+        foreach ($positions as $pos) {
+            $cands = $pos['candidates'];
+            if ($cands->isNotEmpty()) {
+                $top = $cands->first();
+                if ($top['vote_count'] > 0) {
+                    $isTie = $cands->count() > 1 && $cands[1]['vote_count'] === $top['vote_count'];
+                    $winners[] = [
+                        'position_id' => $pos['id'],
+                        'position_name' => $pos['name'],
+                        'candidate_id' => $top['id'],
+                        'candidate_name' => $top['name'],
+                        'vote_count' => $top['vote_count'],
+                        'percentage' => $top['percentage'],
+                        'is_tie' => $isTie,
+                    ];
+                }
+            }
+        }
+
         $endedDate = $election->end_date ?? $election->updated_at;
 
         return response()->json([
@@ -121,6 +208,11 @@ class ResultController extends Controller
                 'end_date' => $endedDate ? $endedDate->toIso8601String() : null,
                 'created_at_formatted' => $election->created_at ? $election->created_at->format('F j, Y — g:i A') : null,
                 'end_date_formatted' => $endedDate ? $endedDate->format('F j, Y — g:i A') : null,
+                'total_voters_who_voted' => $totalVotersWhoVoted,
+                'total_votes_cast' => $totalVotesCast,
+                'total_eligible_voters' => $totalEligibleVoters,
+                'turnout_percentage' => $turnoutPercentage,
+                'winners' => $winners,
                 'positions' => $positions,
             ],
         ]);

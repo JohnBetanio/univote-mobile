@@ -7,7 +7,7 @@ interface AuthContextType {
   loading: boolean;
   registerStudent: (data: { fullName: string; email: string; password: string; age: number; sex: string; course: string; yearLevel: string; organizationId?: number }) => Promise<{ success: boolean; error?: string }>;
   finishRegistration: () => Promise<void>;
-  completeProfileSetup: (data: { password: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) => Promise<{ success: boolean; error?: string }>;
+  completeProfileSetup: (data: { password?: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) => Promise<{ success: boolean; error?: string }>;
   loginStudent: (data: { email: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: (params: { idToken?: string; email?: string; name?: string; googleId?: string }) => Promise<{ success: boolean; isNewUser?: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(response.data);
   };
 
-  const completeProfileSetup = async (data: { password: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) => {
+  const completeProfileSetup = async (data: { password?: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) => {
     try {
       const response = await api.setupProfile(data);
       if (response.data?.user && !response.error) {

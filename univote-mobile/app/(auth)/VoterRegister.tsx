@@ -54,7 +54,7 @@ export default function VoterRegisterScreen() {
     if (response.data) {
       setOrganizations(response.data);
     } else {
-      setOrganizationsError('Organizations are unavailable. Please ask an administrator to register one.');
+      setOrganizationsError('College departments are unavailable. Please ask an administrator to register one.');
     }
     setOrganizationsLoading(false);
   };
@@ -194,8 +194,8 @@ export default function VoterRegisterScreen() {
                 <View style={styles.choiceRow}>{['1st Year', '2nd Year', '3rd Year', '4th Year', 'Graduate'].map((option) => <TouchableOpacity key={option} style={[styles.choice, yearLevel === option && styles.choiceSelected]} onPress={() => setYearLevel(option)}><Text style={[styles.choiceText, yearLevel === option && styles.choiceTextSelected]}>{option}</Text></TouchableOpacity>)}</View>
               </View>
               <View style={styles.field}>
-                <Text style={styles.label}>Organization</Text>
-                {organizationsLoading ? <ActivityIndicator color={Colors.primary} /> : organizations.length ? <View style={styles.choiceRow}>{organizations.map((organization) => <TouchableOpacity key={organization.id} style={[styles.choice, organizationId === organization.id && styles.choiceSelected]} onPress={() => setOrganizationId(organization.id)}><Text style={[styles.choiceText, organizationId === organization.id && styles.choiceTextSelected]}>{organization.name} ({organization.code})</Text></TouchableOpacity>)}</View> : <View style={styles.organizationEmpty}><Text style={styles.organizationEmptyText}>{organizationsError || 'No organizations have been registered yet.'}</Text><TouchableOpacity onPress={loadOrganizations}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View>}
+                <Text style={styles.label}>College Department</Text>
+                {organizationsLoading ? <ActivityIndicator color={Colors.primary} /> : organizations.length ? <View style={styles.choiceRow}>{organizations.map((organization) => <TouchableOpacity key={organization.id} style={[styles.choice, organizationId === organization.id && styles.choiceSelected]} onPress={() => setOrganizationId(organization.id)}><Text style={[styles.choiceText, organizationId === organization.id && styles.choiceTextSelected]}>{organization.name} ({organization.code})</Text></TouchableOpacity>)}</View> : <View style={styles.organizationEmpty}><Text style={styles.organizationEmptyText}>{organizationsError || 'No college departments have been registered yet.'}</Text><TouchableOpacity onPress={loadOrganizations}><Text style={styles.retryText}>Retry</Text></TouchableOpacity></View>}
               </View>
             </>
           )}

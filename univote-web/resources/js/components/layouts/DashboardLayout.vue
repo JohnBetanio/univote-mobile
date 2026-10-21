@@ -389,9 +389,10 @@ export default {
 }
 
 .content-area {
-    padding: 40px;
+    padding: 30px 40px;
     width: 100%;
     max-width: 100%;
+    box-sizing: border-box;
 }
 
 .alert {
@@ -584,7 +585,9 @@ export default {
 .admin-workspace .content-area {
     max-width: 1480px;
     margin: 0 auto;
-    padding: 34px;
+    padding: 30px 34px;
+    box-sizing: border-box;
+    width: 100%;
 }
 
 @media (max-width: 820px) {

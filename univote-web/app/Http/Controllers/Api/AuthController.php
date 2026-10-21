@@ -73,7 +73,27 @@ class AuthController extends Controller
             $role = 'admin';
         }
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        // User not found
+        if (!$user) {
+            \App\Models\AuditLog::record([
+                'user_id'    => null,
+                'actor_name' => $request->email,
+                'action'     => 'LOGIN_FAILED',
+                'description'=> 'Failed login attempt via Mobile API (user not found)',
+                'severity'   => 'warning',
+            ]);
+            return response()->json(['error' => 'Invalid credentials'], 401);
+        }
+
+        // Google-only account — has no manually set password
+        if ($role === 'student' && $user->google_id && !$user->password_manually_set) {
+            return response()->json([
+                'error' => 'This account was created with Google Sign-In. Please use the "Continue with Google" button to log in.',
+            ], 401);
+        }
+
+        // Wrong password
+        if (!Hash::check($request->password, $user->password)) {
             \App\Models\AuditLog::record([
                 'user_id'    => null,
                 'actor_name' => $request->email,
@@ -81,7 +101,6 @@ class AuthController extends Controller
                 'description'=> 'Failed login attempt via Mobile API',
                 'severity'   => 'warning',
             ]);
-
             return response()->json(['error' => 'Invalid credentials'], 401);
         }
 
@@ -288,7 +307,7 @@ class AuthController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'password' => 'required|string|min:6',
+            'password' => 'nullable|string|min:6',
             'name' => 'required|string|max:255',
             'age' => 'required|integer|min:15|max:100',
             'sex' => 'required|string|in:Male,Female,Other',
@@ -301,16 +320,22 @@ class AuthController extends Controller
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
-        $voter->update([
+        $profileData = [
             'name' => $request->name,
-            'password' => Hash::make($request->password),
             'age' => $request->age,
             'sex' => $request->sex,
             'course' => $request->course,
             'year_level' => $request->year_level,
             'organization_id' => $request->organization_id,
             'is_profile_completed' => true,
-        ]);
+        ];
+
+        if ($request->filled('password')) {
+            $profileData['password'] = Hash::make($request->password);
+            $profileData['password_manually_set'] = true;
+        }
+
+        $voter->update($profileData);
 
         $voter->refresh();
         $voter->load(['facialProfile', 'organization']);
@@ -320,7 +345,7 @@ class AuthController extends Controller
             'user_type'  => get_class($voter),
             'actor_name' => $voter->name ?? $voter->email,
             'action'     => 'PROFILE_SETUP',
-            'description'=> 'Voter completed app profile & password setup',
+            'description'=> 'Voter completed student profile setup',
         ]);
 
         return response()->json([

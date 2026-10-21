@@ -11,16 +11,37 @@
                     </div>
                     <div>
                         <h1 class="page-title">Manage Elections</h1>
-                        <p class="page-subtitle">Create, manage, and monitor all campus elections</p>
+                        <p class="page-subtitle">Create, monitor, and manage ongoing campus elections</p>
                     </div>
                 </div>
-                <router-link to="/admin/elections/create" class="btn btn-create">
-                    <svg class="btn-icon-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                    Create Election
-                </router-link>
+                <div class="header-action-group">
+                    <router-link to="/admin/results" class="btn btn-secondary-archive">
+                        <svg class="btn-icon-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                        </svg>
+                        Results Archive
+                    </router-link>
+                    <router-link to="/admin/elections/create" class="btn btn-create">
+                        <svg class="btn-icon-svg" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Create Election
+                    </router-link>
+                </div>
             </div>
+        </div>
+
+        <!-- Archive Notice Banner -->
+        <div class="archive-notice-bar">
+            <div class="notice-left">
+                <span class="notice-pill">Archive Flow</span>
+                <span class="notice-text">
+                    Ending an election moves it permanently to the <strong>Results Archive</strong> with official tallies, voter turnout counts, and winner declarations.
+                </span>
+            </div>
+            <router-link to="/admin/results" class="notice-link">
+                Go to Results Page &rarr;
+            </router-link>
         </div>
 
         <!-- Stats Summary -->
@@ -33,7 +54,7 @@
                 </div>
                 <div class="stat-info">
                     <div class="stat-value">{{ elections.length }}</div>
-                    <div class="stat-label">Total Elections</div>
+                    <div class="stat-label">Active Elections</div>
                 </div>
             </div>
             <div class="stat-card stat-active">
@@ -283,15 +304,17 @@ export default {
             activeFilter: 'all',
             orgFilter: '',
             statusFilters: [
-                { value: 'all', label: 'All' },
-                { value: 'active', label: 'Active' },
-                { value: 'ended', label: 'Ended' },
+                { value: 'all', label: 'All Active' },
             ],
         };
     },
     computed: {
         elections() {
-            return this.electionStore.elections || [];
+            // Only active/running elections display on Manage Election page
+            // Concluded/ended elections are strictly archived on the Results page
+            return (this.electionStore.elections || []).filter(
+                (e) => e.status !== 'ended' && e.status !== 'closed'
+            );
         },
         loading() {
             return this.electionStore.isLoading;
@@ -375,13 +398,13 @@ export default {
         },
         async endElection(electionId) {
             const confirmed = await this.showConfirm(
-                'Are you sure you want to end this election? Voters will no longer be able to vote.',
-                { title: 'End Election', confirmText: 'End Election', isDangerous: false },
+                'Are you sure you want to end this election? Once ended, it will be moved to the Results page where official winners and voter turnout are archived.',
+                { title: 'End Election', confirmText: 'End & Move to Results', isDangerous: false },
             );
             if (!confirmed) return;
             try {
                 await this.electionStore.endElection(electionId);
-                this.showSuccess('Election ended successfully!');
+                this.showSuccess('Election ended successfully! It has been moved to the Results archive.');
                 await this.loadElections();
             } catch (error) {
                 this.showError(error.response?.data?.message || error.message || 'Failed to end election.');
@@ -521,6 +544,94 @@ export default {
 .btn-icon-svg {
     width: 20px;
     height: 20px;
+}
+
+.header-action-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.btn-secondary-archive {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #fff;
+    color: #116b27;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.22s ease;
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+}
+
+.btn-secondary-archive:hover {
+    background: #f4fbf5;
+    color: #0b511c;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+}
+
+/* Archive Notice Bar */
+.archive-notice-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 14px;
+    padding: 14px 20px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.notice-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.notice-pill {
+    display: inline-block;
+    background: #16a34a;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+}
+
+.notice-text {
+    font-size: 13.5px;
+    color: #14532d;
+    line-height: 1.4;
+}
+
+.notice-link {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #15803d;
+    text-decoration: none;
+    white-space: nowrap;
+    padding: 6px 14px;
+    background: #dcfce7;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.notice-link:hover {
+    background: #bbf7d0;
+    color: #14532d;
 }
 
 /* =========================================================

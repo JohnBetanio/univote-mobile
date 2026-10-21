@@ -38,6 +38,61 @@ class FacialVerificationController extends Controller
         ]);
     }
 
+    public function detectQuality(Request $request)
+    {
+        $voter = $this->getVoterOrFail($request);
+        if (!$voter) {
+            return response()->json(['error' => 'Only voters can test face quality'], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'face_data' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['error' => $validator->errors()], 422);
+        }
+
+        try {
+            $imageBytes = RekognitionService::decodeImage($request->face_data);
+            if (!RekognitionService::validateImageFormat($imageBytes)) {
+                return response()->json([
+                    'valid' => false,
+                    'has_face' => false,
+                    'error' => 'Invalid image format. Please use JPEG or PNG.',
+                    'error_code' => 'invalid_format',
+                ], 422);
+            }
+
+            $detection = $this->rekognition->detectFaceQuality($imageBytes);
+
+            $isValid = $detection['hasFace']
+                && empty($detection['isBlurry'])
+                && empty($detection['isHalfCaptured'])
+                && (($detection['faceCount'] ?? 1) === 1)
+                && empty($detection['error_code']);
+
+            return response()->json([
+                'valid' => $isValid,
+                'has_face' => $detection['hasFace'],
+                'is_blurry' => $detection['isBlurry'] ?? false,
+                'is_half_captured' => $detection['isHalfCaptured'] ?? false,
+                'face_count' => $detection['faceCount'] ?? 0,
+                'quality' => $detection['quality'] ?? ['brightness' => 0, 'sharpness' => 0],
+                'error_code' => $detection['error_code'] ?? null,
+                'error' => $detection['error'] ?? null,
+                'message' => $isValid ? 'Clear face detected.' : ($detection['error'] ?? 'Face validation failed.'),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'valid' => false,
+                'has_face' => false,
+                'error' => 'Could not process image quality: ' . $e->getMessage(),
+                'error_code' => 'processing_error',
+            ], 422);
+        }
+    }
+
     public function enroll(Request $request)
     {
         $voter = $this->getVoterOrFail($request);
@@ -67,14 +122,32 @@ class FacialVerificationController extends Controller
                 ], 422);
             }
 
-            // Pre-flight: detect face (only reject if truly no face or severe obstruction)
+            // Pre-flight: detect face (strictly enforce face inside circle guide, not cut off, not blurry)
             $qualityThreshold = $this->rekognition->getQualityThreshold();
             $detection = $this->rekognition->detectFaceQuality($imageBytes);
 
             if (!$detection['hasFace']) {
                 return response()->json([
-                    'error' => $detection['error'] ?? 'No face detected. Please position your face clearly in the camera.',
+                    'error' => $detection['error'] ?? 'No face detected in the circle guide. Please position your face clearly within the oval frame.',
                     'error_code' => $detection['error_code'] ?? 'no_face_detected',
+                    'quality_score' => 0,
+                    'min_required' => $qualityThreshold / 100,
+                ], 422);
+            }
+
+            if (!empty($detection['isHalfCaptured'])) {
+                return response()->json([
+                    'error' => $detection['error'] ?? 'Face is only partially captured or cut off. Please center your full face inside the circle guide.',
+                    'error_code' => $detection['error_code'] ?? 'half_face_detected',
+                    'quality_score' => 0,
+                    'min_required' => $qualityThreshold / 100,
+                ], 422);
+            }
+
+            if (!empty($detection['isBlurry'])) {
+                return response()->json([
+                    'error' => $detection['error'] ?? 'Image is blurry. Please hold steady and try again.',
+                    'error_code' => $detection['error_code'] ?? 'face_blurred',
                     'quality_score' => 0,
                     'min_required' => $qualityThreshold / 100,
                 ], 422);
@@ -89,8 +162,14 @@ class FacialVerificationController extends Controller
                 ], 422);
             }
 
-            // If the voter already has a face enrolled in Rekognition, remove the old one first
+            // One-time registration policy: if voter already has an enrolled profile, reject re-enrollment
             $existingProfile = FacialProfile::where('voter_id', $voter->id)->first();
+            if ($existingProfile && $existingProfile->is_enrolled) {
+                return response()->json([
+                    'error' => 'Facial registration is one-time only and has already been completed for your account.',
+                    'error_code' => 'already_registered',
+                ], 422);
+            }
             if ($existingProfile && !empty($existingProfile->face_id)) {
                 try {
                     $this->rekognition->removeFace($existingProfile->face_id);
@@ -223,7 +302,7 @@ class FacialVerificationController extends Controller
                 ], 422);
             }
 
-            // Pre-flight: detect face (only reject if truly no face or multiple people)
+            // Pre-flight: detect face and ensure image is clear and usable before matching
             $qualityThreshold = $this->rekognition->getQualityThreshold();
             $detection = $this->rekognition->detectFaceQuality($imageBytes);
 
@@ -231,9 +310,40 @@ class FacialVerificationController extends Controller
                 return response()->json([
                     'success' => false,
                     'verified' => false,
-                    'error' => $detection['error'] ?? 'No face detected in the image. Please position your face clearly in the camera.',
+                    'error' => $detection['error'] ?? 'No face detected in the circle guide. Please position your face clearly in the circle.',
                     'error_code' => $detection['error_code'] ?? 'no_face_detected',
-                ], 200);
+                    'is_quality_issue' => true,
+                ], 422);
+            }
+
+            if (!empty($detection['isHalfCaptured'])) {
+                return response()->json([
+                    'success' => false,
+                    'verified' => false,
+                    'error' => $detection['error'] ?? 'Face is only partially captured or cut off. Please center your full face inside the circle guide.',
+                    'error_code' => $detection['error_code'] ?? 'half_face_detected',
+                    'is_quality_issue' => true,
+                ], 422);
+            }
+
+            if (!empty($detection['isBlurry'])) {
+                return response()->json([
+                    'success' => false,
+                    'verified' => false,
+                    'error' => $detection['error'] ?? 'Image is blurry. Please hold steady and try again.',
+                    'error_code' => 'face_blurred',
+                    'is_quality_issue' => true,
+                ], 422);
+            }
+
+            if (($detection['error_code'] ?? null) === 'poor_lighting') {
+                return response()->json([
+                    'success' => false,
+                    'verified' => false,
+                    'error' => $detection['error'] ?? 'Lighting is too dark or overexposed. Please move to a well-lit area.',
+                    'error_code' => 'poor_lighting',
+                    'is_quality_issue' => true,
+                ], 422);
             }
 
             if (($detection['faceCount'] ?? 1) > 1) {
@@ -242,10 +352,11 @@ class FacialVerificationController extends Controller
                     'verified' => false,
                     'error' => $detection['error'] ?? 'Multiple faces detected. Please ensure only your face is visible.',
                     'error_code' => 'multiple_faces',
-                ], 200);
+                    'is_quality_issue' => true,
+                ], 422);
             }
 
-            // Perform face verification (dual-mode: Rekognition or Local comparison with lighting normalization)
+            // Perform face verification against authenticated voter's registered profile
             $verifyResult = $this->rekognition->verifyFace(
                 $voter->id,
                 $profile->face_id,
@@ -253,7 +364,32 @@ class FacialVerificationController extends Controller
                 $profile->face_data
             );
 
-            $matchThreshold = $this->rekognition->getMatchThreshold();
+            // If verifyFace flagged a quality issue on the capture
+            if (!empty($verifyResult['is_quality_issue'])) {
+                return response()->json([
+                    'success' => false,
+                    'verified' => false,
+                    'match_score' => 0.0,
+                    'threshold' => round(($verifyResult['threshold'] ?? $this->rekognition->getMatchThreshold()) / 100, 4),
+                    'error' => $verifyResult['error'] ?? 'Image unusable for verification. Please scan again in good light.',
+                    'error_code' => $verifyResult['error_code'] ?? 'quality_rejected',
+                    'is_quality_issue' => true,
+                ], 422);
+            }
+
+            // If an external service/network error occurred
+            if (($verifyResult['error_code'] ?? null) === 'api_error') {
+                return response()->json([
+                    'success' => false,
+                    'verified' => false,
+                    'match_score' => 0.0,
+                    'threshold' => round(($verifyResult['threshold'] ?? $this->rekognition->getMatchThreshold()) / 100, 4),
+                    'error' => $verifyResult['error'] ?? 'Facial verification service temporarily unavailable. Please try again.',
+                    'error_code' => 'api_error',
+                ], 503);
+            }
+
+            $matchThreshold = $verifyResult['threshold'] ?? $this->rekognition->getMatchThreshold();
             // Convert similarity (0-100) to a 0-1 scale for API consistency
             $matchScore = $verifyResult['similarity'] / 100;
             $threshold = $matchThreshold / 100;
@@ -278,20 +414,22 @@ class FacialVerificationController extends Controller
                     'success' => true,
                     'verified' => true,
                     'match_score' => round($matchScore, 4),
-                    'threshold' => $threshold,
+                    'threshold' => round($threshold, 4),
                     'message' => 'Facial verification successful!',
                     'session_token' => $sessionToken,
                     'session_expires_at' => now()->addMinutes(15)->toIso8601String(),
                     'facial_config' => $voter->fresh()->load('facialProfile')->facial_config,
                 ]);
             } else {
+                $profile->increment('verification_attempts');
                 $profile->update([
                     'last_failed_at' => now(),
                 ]);
 
-                Log::warning('Facial verification failed', [
+                Log::warning('Facial verification failed: identity mismatch', [
                     'voter_id' => $voter->id,
                     'similarity' => $verifyResult['similarity'],
+                    'threshold' => $matchThreshold,
                     'mode' => $verifyResult['mode'] ?? 'unknown',
                 ]);
 
@@ -301,10 +439,10 @@ class FacialVerificationController extends Controller
                     'success' => false,
                     'verified' => false,
                     'match_score' => round($matchScore, 4),
-                    'threshold' => $threshold,
+                    'threshold' => round($threshold, 4),
                     'error' => $failMessage,
                     'error_code' => 'no_match',
-                ], 200);
+                ], 401);
             }
         } catch (\Throwable $e) {
             Log::error('Facial verification error', [
@@ -317,9 +455,9 @@ class FacialVerificationController extends Controller
             return response()->json([
                 'success' => false,
                 'verified' => false,
-                'error' => 'Could not verify face. Please ensure your face is well-lit and try again.',
+                'error' => 'Could not verify face due to a processing error. Please try again.',
                 'error_code' => 'verification_error',
-            ], 200);
+            ], 422);
         }
     }
 
@@ -380,16 +518,11 @@ class FacialVerificationController extends Controller
 
         $profile = $voter->facialProfile;
 
-        if ($profile && !empty($profile->face_id)) {
-            try {
-                $this->rekognition->removeFace($profile->face_id);
-            } catch (\Exception $e) {
-                Log::warning('Failed to remove face during profile removal', [
-                    'voter_id' => $voter->id,
-                    'face_id' => $profile->face_id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+        if ($profile && $profile->is_enrolled) {
+            return response()->json([
+                'error' => 'Facial registration is permanent and one-time only. Contact an administrator to reset facial data.',
+                'error_code' => 'removal_not_permitted',
+            ], 403);
         }
 
         if ($profile) {

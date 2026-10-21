@@ -16,12 +16,28 @@ interface ApiResponse<T> {
   error_code?: string;
   match_score?: number;
   attempts_remaining?: number;
+  is_quality_issue?: boolean;
   quality_detail?: {
     brightness?: number;
     sharpness?: number;
     min_required?: number;
   };
   facial_config?: FacialConfig;
+}
+
+interface FaceQualityResult {
+  valid: boolean;
+  has_face: boolean;
+  is_blurry: boolean;
+  is_half_captured: boolean;
+  face_count: number;
+  quality: {
+    brightness: number;
+    sharpness: number;
+  };
+  error?: string;
+  error_code?: string;
+  message?: string;
 }
 
 interface Organization {
@@ -72,6 +88,7 @@ interface FacialVerifyResult {
   session_expires_at?: string;
   facial_config?: FacialConfig;
   error_code?: string;
+  is_quality_issue?: boolean;
   attempts_remaining?: number;
   quality_detail?: {
     brightness?: number;
@@ -214,6 +231,7 @@ class ApiService {
           error_code: data?.error_code,
           match_score: data?.match_score,
           attempts_remaining: data?.attempts_remaining,
+          is_quality_issue: data?.is_quality_issue,
           quality_detail: data?.quality_detail,
           facial_config: data?.facial_config,
         };
@@ -295,11 +313,11 @@ class ApiService {
     });
   }
 
-  async setupProfile(data: { password: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) {
+  async setupProfile(data: { password?: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) {
     return this.request<{ user: User; message: string }>("/auth/setup-profile", {
       method: "POST",
       body: JSON.stringify({
-        password: data.password,
+        ...(data.password ? { password: data.password } : {}),
         name: data.fullName,
         age: data.age,
         sex: data.sex,
@@ -480,6 +498,13 @@ class ApiService {
     return this.request<FacialConfigResponse>("/facial/config");
   }
 
+  async detectFaceQuality(faceData: string) {
+    return this.request<FaceQualityResult>("/facial/detect-quality", {
+      method: "POST",
+      body: JSON.stringify({ face_data: faceData }),
+    });
+  }
+
   async enrollFace(faceData: string, qualityScore?: number) {
     const body: Record<string, unknown> = { face_data: faceData };
     if (qualityScore !== undefined) body.quality_score = qualityScore;
@@ -564,4 +589,4 @@ class ApiService {
 }
 
 export const api = new ApiService();
-export type { User, Organization, Election, Candidate, Vote, Announcement, FacialConfig, FacialVerifyResult, FacialConfigResponse };
+export type { User, Organization, Election, Candidate, Vote, Announcement, FacialConfig, FacialVerifyResult, FacialConfigResponse, FaceQualityResult };

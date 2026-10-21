@@ -97,7 +97,10 @@ Route::prefix('admin')->middleware('auth:admin')->group(function () {
     // Audit Logs Management
     Route::controller(\App\Http\Controllers\Admin\AuditLogController::class)->group(function () {
         Route::get('audit-logs', 'index')->name('admin.audit-logs.index');
-        Route::get('audit-logs/{id}', 'show')->name('admin.audit-logs.show');
+        Route::delete('audit-logs/delete-all', 'deleteAll')->name('admin.audit-logs.delete-all');
+        Route::post('audit-logs/delete-group', 'deleteGroup')->name('admin.audit-logs.delete-group');
+        Route::get('audit-logs/{id}', 'show')->whereNumber('id')->name('admin.audit-logs.show');
+        Route::delete('audit-logs/{id}', 'destroy')->whereNumber('id')->name('admin.audit-logs.destroy');
     });
 
     // Admin Profile

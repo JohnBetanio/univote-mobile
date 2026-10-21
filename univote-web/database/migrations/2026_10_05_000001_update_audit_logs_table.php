@@ -15,6 +15,7 @@ return new class extends Migration
             Schema::create('audit_logs', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('user_id')->nullable()->index();
+                $table->unsignedBigInteger('organization_id')->nullable()->index();
                 $table->string('user_type')->nullable()->index();
                 $table->string('actor_name')->nullable();
                 $table->string('action')->index();
@@ -34,6 +35,9 @@ return new class extends Migration
             });
         } else {
             Schema::table('audit_logs', function (Blueprint $table) {
+                if (!Schema::hasColumn('audit_logs', 'organization_id')) {
+                    $table->unsignedBigInteger('organization_id')->nullable()->index()->after('user_id');
+                }
                 if (!Schema::hasColumn('audit_logs', 'actor_name')) {
                     $table->string('actor_name')->nullable()->after('user_type');
                 }

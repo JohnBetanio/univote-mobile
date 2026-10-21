@@ -166,6 +166,9 @@ export const useElectionStore = defineStore("election", () => {
             const response = await adminAPI.deleteElection(id);
             // Remove from list
             elections.value = elections.value.filter((e) => e.id !== id);
+            if (results.value && Array.isArray(results.value)) {
+                results.value = results.value.filter((r) => r.id !== id);
+            }
             return response.data;
         } catch (err) {
             error.value =

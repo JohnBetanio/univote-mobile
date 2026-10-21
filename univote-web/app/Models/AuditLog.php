@@ -12,6 +12,7 @@ class AuditLog extends Model
 
     protected $fillable = [
         'user_id',
+        'organization_id',
         'user_type',
         'actor_name',
         'action',
@@ -64,6 +65,11 @@ class AuditLog extends Model
         return 'Web Browser';
     }
 
+    public function organization()
+    {
+        return $this->belongsTo(\App\Models\Organization::class);
+    }
+
     /**
      * Helper to log custom system or auth audit events
      */
@@ -80,6 +86,11 @@ class AuditLog extends Model
             $actorName = $user->name ?? $user->email ?? ("User #" . $user->id);
         }
 
+        $orgId = $data['organization_id'] ?? null;
+        if (!$orgId && $user && isset($user->organization_id)) {
+            $orgId = $user->organization_id;
+        }
+
         $userAgent = $data['user_agent'] ?? $request->userAgent();
         $platform = $data['platform'] ?? self::detectPlatform($userAgent);
 
@@ -87,19 +98,20 @@ class AuditLog extends Model
         $description = $data['description'] ?? ($action . ' performed');
 
         return self::create([
-            'user_id'     => $userId,
-            'user_type'   => $userType,
-            'actor_name'  => $actorName,
-            'action'      => $action,
-            'model_type'  => $data['model_type'] ?? null,
-            'model_id'    => $data['model_id'] ?? null,
-            'old_values'  => $data['old_values'] ?? null,
-            'new_values'  => $data['new_values'] ?? null,
-            'description' => $description,
-            'ip_address'  => $data['ip_address'] ?? $request->ip(),
-            'user_agent'  => $userAgent,
-            'platform'    => $platform,
-            'severity'    => $data['severity'] ?? 'info',
+            'user_id'         => $userId,
+            'organization_id' => $orgId,
+            'user_type'       => $userType,
+            'actor_name'      => $actorName,
+            'action'          => $action,
+            'model_type'      => $data['model_type'] ?? null,
+            'model_id'        => $data['model_id'] ?? null,
+            'old_values'      => $data['old_values'] ?? null,
+            'new_values'      => $data['new_values'] ?? null,
+            'description'     => $description,
+            'ip_address'      => $data['ip_address'] ?? $request->ip(),
+            'user_agent'      => $userAgent,
+            'platform'        => $platform,
+            'severity'        => $data['severity'] ?? 'info',
         ]);
     }
 }

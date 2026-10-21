@@ -296,6 +296,12 @@ export default {
                 const response = await this.electionStore.loadAdminElection(id);
                 this.election = response.election || {};
 
+                if (this.election.status === "ended" || this.election.status === "closed") {
+                    this.showWarning("Concluded elections cannot be edited. Redirecting to Results archive.");
+                    this.$router.replace("/admin/results");
+                    return;
+                }
+
                 // Initialize form with election data
                 this.form = {
                     title: this.election.title || "",

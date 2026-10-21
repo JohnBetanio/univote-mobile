@@ -48,6 +48,7 @@ export default function VoterVoteScreen() {
   const [step, setStep] = useState<Step>('list');
   const [elections, setElections] = useState<Election[]>([]);
   const [selectedElection, setSelectedElection] = useState<Election | null>(null);
+  const [pendingElection, setPendingElection] = useState<Election | null>(null);
   const [selections, setSelections] = useState<Record<string, number>>({});
   const [votedElections, setVotedElections] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -115,6 +116,33 @@ export default function VoterVoteScreen() {
       router.push('/(tabs)/(voter)/VoterVotes');
       return;
     }
+
+    setPendingElection(election);
+
+    // Requirement: Voter must scan face first before seeing candidate list
+    if (facialRequired) {
+      if (needsFacialEnrollment()) {
+        Alert.alert(
+          'Face Scan Required',
+          'To ensure election security, you must enroll and scan your face first before you can view the ballot candidates.',
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => setPendingElection(null) },
+            {
+              text: 'Scan Face Now',
+              onPress: () => {
+                setFaceModalAction('enroll');
+                setFaceModalVisible(true);
+              },
+            },
+          ]
+        );
+      } else {
+        setFaceModalAction('verify');
+        setFaceModalVisible(true);
+      }
+      return;
+    }
+
     setSelectedElection(election);
     setSelections({});
     setFacialSessionToken(null);
@@ -144,11 +172,24 @@ export default function VoterVoteScreen() {
     setFacialConfig(result.facial_config);
     if (result.session_token) {
       setFacialSessionToken(result.session_token);
+      // Face scan verified! Unlock candidates list and show ballot
+      if (pendingElection) {
+        setSelectedElection(pendingElection);
+        setSelections({});
+        setStep('vote');
+      }
     } else if (facialRequired) {
       if (result.facial_config.is_enabled) {
         setFaceModalAction('verify');
-        setTimeout(() => setFaceModalVisible(true), 100);
+        setTimeout(() => setFaceModalVisible(true), 150);
       }
+    }
+  };
+
+  const handleCloseFaceModal = () => {
+    setFaceModalVisible(false);
+    if (!selectedElection) {
+      setPendingElection(null);
     }
   };
 
@@ -235,10 +276,12 @@ export default function VoterVoteScreen() {
         Alert.alert(
           'Facial Verification Required',
           'Please complete facial verification before casting your vote.',
-          [{ text: 'Verify Now', onPress: () => {
-            setFaceModalAction(facialConfig?.is_enrolled ? 'verify' : 'enroll');
-            setFaceModalVisible(true);
-          }}]
+          [{
+            text: 'Verify Now', onPress: () => {
+              setFaceModalAction(facialConfig?.is_enrolled ? 'verify' : 'enroll');
+              setFaceModalVisible(true);
+            }
+          }]
         );
         return;
       }
@@ -253,6 +296,7 @@ export default function VoterVoteScreen() {
   const handleBack = () => {
     setStep('list');
     setSelectedElection(null);
+    setPendingElection(null);
     setSelections({});
     setFacialSessionToken(null);
   };
@@ -416,15 +460,15 @@ export default function VoterVoteScreen() {
                   {facialSessionToken
                     ? 'Biometric Identity Verified'
                     : !facialConfig.is_enrolled
-                    ? 'Facial Enrollment Required'
-                    : 'Facial Verification Required'}
+                      ? 'Facial Enrollment Required'
+                      : 'Facial Verification Required'}
                 </Text>
                 <Text style={styles.securityDesc}>
                   {facialSessionToken
                     ? 'Identity confirmed. You are ready to cast your ballot.'
                     : !facialConfig.is_enrolled
-                    ? 'Please enroll your face to unlock ballot submission.'
-                    : 'Face verification is required before casting your vote.'}
+                      ? 'Please enroll your face to unlock ballot submission.'
+                      : 'Face verification is required before casting your vote.'}
                 </Text>
               </View>
               {!facialSessionToken && (
@@ -442,7 +486,26 @@ export default function VoterVoteScreen() {
           )}
 
           {/* Grouped Positions & Candidates */}
-          {ballotGroups.map((group, groupIdx) => {
+          {facialRequired && !facialSessionToken ? (
+            <View style={styles.candidatesLockedBox}>
+              <View style={styles.candidatesLockedIconCircle}>
+                <Ionicons name="lock-closed" size={36} color={Colors.primary} />
+              </View>
+              <Text style={styles.candidatesLockedTitle}>Candidates Hidden for Security</Text>
+              <Text style={styles.candidatesLockedDesc}>
+                You must scan and verify your face first before seeing the lists of candidates.
+              </Text>
+              <TouchableOpacity
+                style={styles.scanFaceUnlockBtn}
+                onPress={openFacialVerify}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="scan-outline" size={18} color="#fff" />
+                <Text style={styles.scanFaceUnlockBtnText}>Scan Face to Reveal Candidates</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            ballotGroups.map((group, groupIdx) => {
             const isPositionChosen = !!selections[group.position];
 
             return (
@@ -543,22 +606,25 @@ export default function VoterVoteScreen() {
                 </View>
               </View>
             );
-          })}
+          })
+          )}
         </ScrollView>
 
         {/* ── Sticky Bottom Submission Bar ── */}
         <View style={styles.bottomBar}>
           <View style={styles.bottomBarMeta}>
             <Text style={styles.bottomBarSummary}>
-              {allSelected
+              {facialRequired && !facialSessionToken
+                ? 'Face scan required'
+                : allSelected
                 ? 'All positions selected'
                 : `${totalPositions - selectedCount} position${totalPositions - selectedCount !== 1 ? 's' : ''} left`}
             </Text>
             <Text style={styles.bottomBarSubtext}>
-              {allSelected && facialSessionToken
+              {facialRequired && !facialSessionToken
+                ? 'Scan face to view candidates'
+                : allSelected && facialSessionToken
                 ? 'Ready to cast verified vote'
-                : allSelected && !facialSessionToken
-                ? 'Requires facial verification'
                 : 'Select one candidate per position'}
             </Text>
           </View>
@@ -566,10 +632,10 @@ export default function VoterVoteScreen() {
           <TouchableOpacity
             style={[
               styles.submitVoteBtn,
-              !canSubmit && styles.submitVoteBtnDisabled,
+              (!canSubmit || (facialRequired && !facialSessionToken)) && styles.submitVoteBtnDisabled,
             ]}
             onPress={handleSubmitVote}
-            disabled={!canSubmit}
+            disabled={!canSubmit || (facialRequired && !facialSessionToken)}
             activeOpacity={0.85}
           >
             {submitting ? (
@@ -580,13 +646,13 @@ export default function VoterVoteScreen() {
                   <Ionicons name="scan-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
                 )}
                 <Text style={styles.submitVoteBtnText}>
-                  {!allSelected
+                  {facialRequired && !facialSessionToken
+                    ? 'Scan Face First'
+                    : !allSelected
                     ? `Choose All (${totalPositions - selectedCount} left)`
-                    : facialRequired && facialConfig?.is_enabled && !facialSessionToken
-                    ? 'Verify & Submit'
                     : 'Cast My Ballot'}
                 </Text>
-                {allSelected && <Ionicons name="arrow-forward" size={16} color="#fff" style={{ marginLeft: 6 }} />}
+                {allSelected && facialSessionToken && <Ionicons name="arrow-forward" size={16} color="#fff" style={{ marginLeft: 6 }} />}
               </View>
             )}
           </TouchableOpacity>
@@ -595,7 +661,7 @@ export default function VoterVoteScreen() {
         {/* Biometric Verification Modal */}
         <FaceVerificationModal
           visible={faceModalVisible}
-          onClose={() => setFaceModalVisible(false)}
+          onClose={handleCloseFaceModal}
           action={faceModalAction}
           context="voting"
           onSuccess={handleFaceSuccess}
@@ -778,8 +844,8 @@ export default function VoterVoteScreen() {
                     onPress={() => handleSelectElection(e)}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="checkbox-outline" size={16} color="#fff" />
-                    <Text style={styles.voteNowBtnText}>Open Ballot & Vote</Text>
+                    <Ionicons name="scan-outline" size={16} color="#fff" />
+                    <Text style={styles.voteNowBtnText}>Scan Face & Vote</Text>
                     <Ionicons name="arrow-forward" size={15} color="#fff" />
                   </TouchableOpacity>
                 )}
@@ -796,6 +862,15 @@ export default function VoterVoteScreen() {
           One student, one vote. Biometrically verified to prevent duplicate voting.
         </Text>
       </View>
+
+      {/* Biometric Verification Modal */}
+      <FaceVerificationModal
+        visible={faceModalVisible}
+        onClose={handleCloseFaceModal}
+        action={faceModalAction}
+        context="voting"
+        onSuccess={handleFaceSuccess}
+      />
     </ScrollView>
   );
 }
@@ -1684,5 +1759,68 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
     lineHeight: 15,
+  },
+
+  // Candidates Locked State
+  candidatesLockedBox: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  candidatesLockedIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  candidatesLockedTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  candidatesLockedDesc: {
+    fontSize: 13,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+    paddingHorizontal: 12,
+  },
+  scanFaceUnlockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    paddingVertical: 13,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  scanFaceUnlockBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Image,
+  View, Text, TouchableOpacity, StyleSheet, Image,
   Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,12 +15,9 @@ import { Colors } from '@/constants/Colors';
 WebBrowser.maybeCompleteAuthSession();
 
 export default function VoterLoginScreen() {
-  const { loginStudent, loginWithGoogle } = useAuth();
+  const { loginWithGoogle } = useAuth();
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const mountedRef = useRef(true);
   const isLoggingInWithGoogle = useRef(false);
 
@@ -46,7 +43,6 @@ export default function VoterLoginScreen() {
   useEffect(() => {
     mountedRef.current = true;
 
-    // Listen for deep link redirects returning to the app (e.g. univote://auth/google#id_token=...)
     const subscription = Linking.addEventListener('url', async (event) => {
       if (event?.url) {
         const match = event.url.match(/[#?&]id_token=([^&]+)/);
@@ -57,7 +53,6 @@ export default function VoterLoginScreen() {
       }
     });
 
-    // Check if the app was opened directly with an initial URL
     Linking.getInitialURL().then((url) => {
       if (url) {
         const match = url.match(/[#?&]id_token=([^&]+)/);
@@ -101,8 +96,6 @@ export default function VoterLoginScreen() {
           `&scope=${encodeURIComponent('openid email profile')}` +
           `&nonce=${encodeURIComponent(nonce)}`;
       } else {
-        // Mobile platform (Expo Go or standalone build)
-        // Uses the registered Expo auth proxy for seamless redirect back to the app
         returnUrl = makeRedirectUri({ scheme: 'univote', path: 'auth/google' });
         const proxyBase = 'https://auth.expo.io/@johnbetanio/univote';
         const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
@@ -137,21 +130,6 @@ export default function VoterLoginScreen() {
     if (mountedRef.current) setLoading(value);
   };
 
-
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Missing Fields', 'Please enter your email and password.');
-      return;
-    }
-    safeSetLoading(true);
-    const result = await loginStudent({ email, password });
-    safeSetLoading(false);
-    if (!result.success && mountedRef.current) {
-      Alert.alert('Login Failed', result.error);
-    }
-    // Navigation is handled by RootLayoutNav based on auth state
-  };
-
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -164,75 +142,34 @@ export default function VoterLoginScreen() {
         <View style={styles.card}>
           <Text style={styles.title}>Student Login</Text>
 
-          <View style={styles.field}>
-            <Text style={styles.label}>Student Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="student@ssct.edu.ph"
-              placeholderTextColor={Colors.textMuted}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <View style={styles.pwRow}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Enter your password"
-                placeholderTextColor={Colors.textMuted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPassword(v => !v)}>
-                <Ionicons
-                  name={showPassword ? 'eye-off' : 'eye'}
-                  size={20}
-                  color={Colors.primary}
-                />
-              </TouchableOpacity>
-            </View>
+          <View style={styles.noticeBox}>
+            <Ionicons name="information-circle" size={20} color={Colors.primaryLight} style={{ marginRight: 8, marginTop: 1 }} />
+            <Text style={styles.noticeText}>
+              All student voters must sign in using their official university Google account (@ssct.edu.ph or @snsu.edu.ph).
+            </Text>
           </View>
 
           <TouchableOpacity
-            style={[styles.primaryBtn, loading && styles.btnDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
+            style={[styles.googleSignInBtn, loading && styles.btnDisabled]}
             activeOpacity={0.85}
-          >
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.primaryBtnText}>Login</Text>
-            }
-          </TouchableOpacity>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.secondaryBtn, loading && styles.btnDisabled]}
-            activeOpacity={0.8}
             disabled={loading}
             onPress={handleGoogleButtonPress}
           >
-            <Ionicons name="logo-google" size={20} color="#4285F4" />
-            <Text style={styles.secondaryBtnText}>Sign in with Google</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <View style={styles.googleIconBg}>
+                  <Ionicons name="logo-google" size={18} color="#4285F4" />
+                </View>
+                <Text style={styles.googleSignInText}>Continue with Google</Text>
+              </>
+            )}
           </TouchableOpacity>
 
-          <View style={styles.links}>
-            <TouchableOpacity onPress={() => router.push('/(auth)/VoterRegister')} activeOpacity={0.7}>
-              <Text style={styles.linkText}>
-                Don't have an account? <Text style={styles.linkBold}>Register</Text>
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.securityPill}>
+            <Ionicons name="shield-checkmark" size={14} color={Colors.success} />
+            <Text style={styles.securityPillText}>Secure Student Authentication</Text>
           </View>
         </View>
       </ScrollView>
@@ -253,39 +190,64 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25, shadowRadius: 20, elevation: 14,
   },
-  title: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 22, textAlign: 'center' },
-  field: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: '600', color: '#444', marginBottom: 6 },
-  input: {
-    height: 50, borderWidth: 1.5, borderColor: Colors.border,
-    borderRadius: 12, paddingHorizontal: 16, fontSize: 15,
-    color: Colors.text, backgroundColor: '#fafafa',
+  title: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 16, textAlign: 'center' },
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 24,
   },
-  pwRow: { flexDirection: 'row', alignItems: 'center' },
-  eyeBtn: { position: 'absolute', right: 14, height: 50, justifyContent: 'center' },
-  primaryBtn: {
-    height: 52, backgroundColor: Colors.primaryLight,
-    borderRadius: 26, justifyContent: 'center', alignItems: 'center', marginTop: 4,
-    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
+  noticeText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#1e40af',
+    fontWeight: '500',
   },
-  btnDisabled: { opacity: 0.65 },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.4 },
-  dividerRow: {
+  googleSignInBtn: {
+    height: 54,
+    backgroundColor: '#1e293b',
+    borderRadius: 27,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  googleIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  googleSignInText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  securityPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 20,
-    gap: 12,
+    justifyContent: 'center',
+    marginTop: 24,
+    gap: 6,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#ebebeb' },
-  dividerText: { fontSize: 13, color: '#9CA3AF', fontWeight: '500', textTransform: 'uppercase' },
-  secondaryBtn: {
-    height: 50, borderWidth: 1.5, borderColor: Colors.border,
-    borderRadius: 26, flexDirection: 'row', justifyContent: 'center',
-    alignItems: 'center', gap: 10, backgroundColor: '#fff',
+  securityPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
   },
-  secondaryBtnText: { fontSize: 15, color: Colors.text, fontWeight: '600' },
-  links: { marginTop: 20, gap: 8, alignItems: 'center' },
-  linkText: { color: Colors.textSecondary, fontSize: 14 },
-  linkBold: { color: Colors.primaryLight, fontWeight: '700' },
+  btnDisabled: { opacity: 0.65 },
 });

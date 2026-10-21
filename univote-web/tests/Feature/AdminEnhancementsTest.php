@@ -214,3 +214,201 @@ test('admin results endpoint only returns finished elections and includes format
     expect($found['created_at_formatted'])->not->toBeNull();
     expect($found['end_date_formatted'])->not->toBeNull();
 });
+
+test('manage elections endpoint only returns active elections and excludes ended elections', function () {
+    $active = Election::create([
+        'title' => 'Ongoing Election '.uniqid(),
+        'status' => 'active',
+    ]);
+
+    $ended = Election::create([
+        'title' => 'Finished Election '.uniqid(),
+        'status' => 'ended',
+        'end_date' => now()->subDay(),
+    ]);
+
+    $response = $this->actingAs($this->admin, 'admin')->getJson('/admin/elections');
+    $response->assertOk();
+
+    $ids = collect($response->json('elections'))->pluck('id');
+    expect($ids->contains($active->id))->toBeTrue();
+    expect($ids->contains($ended->id))->toBeFalse();
+});
+
+test('ended election cannot be edited but can be deleted by admin', function () {
+    $ended = Election::create([
+        'title' => 'Concluded Election To Edit '.uniqid(),
+        'status' => 'ended',
+        'end_date' => now()->subDay(),
+    ]);
+
+    // Attempting to edit an ended election must be rejected with 422
+    $editResponse = $this->actingAs($this->admin, 'admin')->putJson("/admin/elections/{$ended->id}", [
+        'title' => 'Modified Title',
+        'positions' => [
+            [
+                'name' => 'President',
+                'max_votes' => 1,
+                'candidates' => ['Candidate 1'],
+            ],
+        ],
+    ]);
+    $editResponse->assertStatus(422);
+    $editResponse->assertJsonFragment(['success' => false]);
+
+    // Deleting an ended election is permitted for the admin
+    $deleteResponse = $this->actingAs($this->admin, 'admin')->deleteJson("/admin/elections/{$ended->id}");
+    $deleteResponse->assertOk();
+    $deleteResponse->assertJsonFragment(['success' => true]);
+    expect(Election::find($ended->id))->toBeNull();
+});
+
+test('results endpoint calculates total voters who voted and declares winners', function () {
+    $election = Election::create([
+        'title' => 'Finished Election With Winners '.uniqid(),
+        'status' => 'ended',
+        'end_date' => now()->subDay(),
+    ]);
+
+    $pos = \App\Models\Position::create([
+        'election_id' => $election->id,
+        'name' => 'Governor',
+        'max_votes' => 1,
+        'order' => 1,
+    ]);
+
+    $cand1 = \App\Models\Candidate::create([
+        'position_id' => $pos->id,
+        'name' => 'Leading Candidate',
+    ]);
+
+    $cand2 = \App\Models\Candidate::create([
+        'position_id' => $pos->id,
+        'name' => 'Runner Up Candidate',
+    ]);
+
+    $voter1 = Voter::create([
+        'name' => 'Voter 1',
+        'email' => 'v1_'.uniqid().'@test.edu',
+        'password' => bcrypt('password'),
+        'age' => 20,
+        'sex' => 'Female',
+        'course' => 'BSCS',
+    ]);
+
+    $voter2 = Voter::create([
+        'name' => 'Voter 2',
+        'email' => 'v2_'.uniqid().'@test.edu',
+        'password' => bcrypt('password'),
+        'age' => 21,
+        'sex' => 'Male',
+        'course' => 'BSCS',
+    ]);
+
+    // Cast votes: voter1 votes for cand1, voter2 votes for cand1
+    \App\Models\Vote::create([
+        'voter_id' => $voter1->id,
+        'candidate_id' => $cand1->id,
+        'election_id' => $election->id,
+    ]);
+    \App\Models\Vote::create([
+        'voter_id' => $voter2->id,
+        'candidate_id' => $cand1->id,
+        'election_id' => $election->id,
+    ]);
+
+    $response = $this->actingAs($this->admin, 'admin')->getJson('/admin/results');
+    $response->assertOk();
+
+    $found = collect($response->json('results'))->firstWhere('id', $election->id);
+    expect($found)->not->toBeNull();
+    expect($found['total_voters_who_voted'])->toBe(2);
+    expect($found['total_votes_cast'])->toBe(2);
+    expect($found['winners'])->toHaveCount(1);
+    expect($found['winners'][0]['candidate_name'])->toBe('Leading Candidate');
+    expect($found['winners'][0]['vote_count'])->toBe(2);
+});
+
+test('admin audit logs can be sorted and filtered by organization', function () {
+    $orgA = \App\Models\Organization::create(['name' => 'Alpha Department', 'code' => 'ALPHA']);
+    $orgB = \App\Models\Organization::create(['name' => 'Beta Department', 'code' => 'BETA']);
+
+    $logA = \App\Models\AuditLog::create([
+        'actor_name' => 'Alpha User',
+        'action' => 'VOTE_CAST',
+        'organization_id' => $orgA->id,
+        'platform' => 'Mobile App',
+    ]);
+
+    $logB = \App\Models\AuditLog::create([
+        'actor_name' => 'Beta User',
+        'action' => 'CREATE_ELECTION',
+        'organization_id' => $orgB->id,
+        'platform' => 'Web Browser',
+    ]);
+
+    // Test filter by organization_id
+    $respA = $this->actingAs($this->admin, 'admin')->getJson("/admin/audit-logs?organization_id={$orgA->id}");
+    $respA->assertOk();
+    $dataA = collect($respA->json('logs.data'));
+    expect($dataA->pluck('id')->contains($logA->id))->toBeTrue();
+    expect($dataA->pluck('id')->contains($logB->id))->toBeFalse();
+
+    // Test sort by organization name
+    $respSort = $this->actingAs($this->admin, 'admin')->getJson("/admin/audit-logs?sort_by=organization&sort_order=asc");
+    $respSort->assertOk();
+    expect($respSort->json('organizations'))->not->toBeEmpty();
+});
+
+test('admin can delete individual audit log, group of audit logs, or all audit logs', function () {
+    $org = \App\Models\Organization::create(['name' => 'Audit Org '.uniqid(), 'code' => 'AORG']);
+
+    $log1 = \App\Models\AuditLog::create([
+        'actor_name' => 'Actor 1',
+        'action' => 'TEST_ACTION_1',
+        'organization_id' => $org->id,
+        'platform' => 'Mobile App',
+    ]);
+
+    $log2 = \App\Models\AuditLog::create([
+        'actor_name' => 'Actor 2',
+        'action' => 'TEST_ACTION_2',
+        'organization_id' => $org->id,
+        'platform' => 'Mobile App',
+    ]);
+
+    $log3 = \App\Models\AuditLog::create([
+        'actor_name' => 'Actor 3',
+        'action' => 'TEST_ACTION_3',
+        'platform' => 'Web Browser',
+    ]);
+
+    // 1. Delete individual audit log
+    $delSingle = $this->actingAs($this->admin, 'admin')->deleteJson("/admin/audit-logs/{$log1->id}");
+    $delSingle->assertOk();
+    expect(\App\Models\AuditLog::find($log1->id))->toBeNull();
+
+    // 2. Delete by group (array of IDs)
+    $delGroup = $this->actingAs($this->admin, 'admin')->postJson("/admin/audit-logs/delete-group", [
+        'ids' => [$log2->id],
+    ]);
+    $delGroup->assertOk();
+    expect(\App\Models\AuditLog::find($log2->id))->toBeNull();
+
+    // 3. Delete by group criteria (platform)
+    $log4 = \App\Models\AuditLog::create([
+        'actor_name' => 'Actor 4',
+        'action' => 'GROUP_DELETE_ME',
+        'platform' => 'Mobile App',
+    ]);
+    $delCriteria = $this->actingAs($this->admin, 'admin')->postJson("/admin/audit-logs/delete-group", [
+        'platform' => 'Mobile App',
+    ]);
+    $delCriteria->assertOk();
+    expect(\App\Models\AuditLog::find($log4->id))->toBeNull();
+
+    // 4. Delete all audit logs
+    $delAll = $this->actingAs($this->admin, 'admin')->deleteJson("/admin/audit-logs/delete-all");
+    $delAll->assertOk();
+    expect(\App\Models\AuditLog::count())->toBe(0);
+});

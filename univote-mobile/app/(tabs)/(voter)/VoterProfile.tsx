@@ -118,7 +118,7 @@ export default function VoterProfileScreen() {
       const match = organizations.find((o) => o.id === user.organization_id);
       if (match) return `${match.name} (${match.code})`;
     }
-    return user?.organization_id ? 'Assigned Organization' : 'Not assigned';
+    return user?.organization_id ? 'Assigned College Department' : 'Not assigned';
   }, [user?.organization, user?.organization_id, organizations]);
 
   const mountedRef = useRef(true);
@@ -225,12 +225,11 @@ export default function VoterProfileScreen() {
   };
 
   const startEnroll = () => {
-    setFaceModalAction(facialConfig?.is_enrolled ? 'reenroll' : 'enroll');
-    setFaceModalVisible(true);
-  };
-
-  const startVerify = () => {
-    setFaceModalAction('verify');
+    if (facialConfig?.is_enrolled) {
+      Alert.alert('Registration Complete', 'Facial registration is one-time only and has already been verified for your account.');
+      return;
+    }
+    setFaceModalAction('enroll');
     setFaceModalVisible(true);
   };
 
@@ -250,28 +249,6 @@ export default function VoterProfileScreen() {
     } else {
       Alert.alert('Error', res.error || 'Could not update setting.');
     }
-  };
-
-  const handleRemove = () => {
-    Alert.alert(
-      'Remove Facial Profile',
-      'This will permanently remove your enrolled face data.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: async () => {
-            const res = await api.removeFacialProfile();
-            if (res.data) {
-              setFacialConfig(res.data.facial_config);
-              Alert.alert('Removed', 'Your facial profile has been removed.');
-            } else {
-              Alert.alert('Error', res.error || 'Could not remove facial profile.');
-            }
-          },
-        },
-      ]
-    );
   };
 
   return (
@@ -351,7 +328,7 @@ export default function VoterProfileScreen() {
         <InfoRow icon="school-outline" label="Year Level" value={yearLevel} iconBg="#EDE7F6" iconColor="#7B1FA2" />
         <InfoRow
           icon="business-outline"
-          label="Organization"
+          label="College Department"
           value={organizationName}
           iconBg="#FFF3E0"
           iconColor="#E65100"
@@ -451,35 +428,27 @@ export default function VoterProfileScreen() {
               </View>
             )}
 
-            {/* Action buttons */}
-            <View style={styles.actionRow}>
-              {!facialConfig.is_enrolled ? (
+            {/* One-time enrollment status / action */}
+            {!facialConfig.is_enrolled ? (
+              <View style={styles.actionRow}>
                 <TouchableOpacity style={styles.primaryAction} onPress={startEnroll}>
                   <Ionicons name="camera-outline" size={18} color="#fff" />
-                  <Text style={styles.primaryActionText}>Enroll Facial Profile</Text>
+                  <Text style={styles.primaryActionText}>Enroll Facial Profile (One-Time)</Text>
                 </TouchableOpacity>
-              ) : (
-                <>
-                  <TouchableOpacity style={styles.secondaryAction} onPress={startVerify}>
-                    <Ionicons name="shield-checkmark-outline" size={18} color={Colors.primary} />
-                    <Text style={styles.secondaryActionText}>Test Verify</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.primaryAction} onPress={startEnroll}>
-                    <Ionicons name="refresh-outline" size={18} color="#fff" />
-                    <Text style={styles.primaryActionText}>Re-Enroll</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-
-            <View style={styles.dangerRow}>
-              {facialConfig.is_enrolled && (
-                <TouchableOpacity style={styles.textBtn} onPress={handleRemove}>
-                  <Ionicons name="trash-outline" size={16} color={Colors.error} />
-                  <Text style={[styles.textBtnText, { color: Colors.error }]}>Remove Face Data</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+              </View>
+            ) : (
+              <View style={styles.enrolledStatusCard}>
+                <View style={styles.enrolledStatusIcon}>
+                  <Ionicons name="shield-checkmark" size={20} color={Colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.enrolledStatusTitle}>Face Profile Registered</Text>
+                  <Text style={styles.enrolledStatusDesc}>
+                    Facial registration is one-time only and permanently verified for this account.
+                  </Text>
+                </View>
+              </View>
+            )}
           </>
         ) : (
           <View style={styles.noFacialNotice}>
@@ -617,7 +586,7 @@ export default function VoterProfileScreen() {
               <View style={styles.lockedNotice}>
                 <Ionicons name="lock-closed" size={16} color="#8899aa" />
                 <Text style={styles.lockedNoticeText}>
-                  Year Level and Organization are restricted and can only be modified by an administrator.
+                  Year Level and College Department are restricted and can only be modified by an administrator.
                 </Text>
               </View>
             </ScrollView>
@@ -904,18 +873,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row', gap: 6,
   },
   primaryActionText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  secondaryAction: {
-    height: 46, paddingHorizontal: 14,
-    backgroundColor: '#fff',
-    borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'row', gap: 6,
-    borderWidth: 1.5, borderColor: Colors.primary,
+  enrolledStatusCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 8,
   },
-  secondaryActionText: { color: Colors.primary, fontSize: 14, fontWeight: '700' },
-
-  dangerRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 14 },
-  textBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 4 },
-  textBtnText: { fontSize: 12, fontWeight: '700' },
+  enrolledStatusIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#D1FAE5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  enrolledStatusTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#065F46',
+    marginBottom: 2,
+  },
+  enrolledStatusDesc: {
+    fontSize: 12,
+    color: '#047857',
+    lineHeight: 16,
+    fontWeight: '500',
+  },
 
   noFacialNotice: {
     flexDirection: 'row', alignItems: 'flex-start',

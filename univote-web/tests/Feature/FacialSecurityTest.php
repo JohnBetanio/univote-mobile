@@ -326,4 +326,273 @@ class FacialSecurityTest extends TestCase
         $this->assertTrue(in_array($response->status(), [401, 422]));
         $this->assertFalse($response->json('verified', false));
     }
+
+    public function test_same_face_in_different_places_and_backgrounds_succeeds(): void
+    {
+        $voter = $this->createTestVoter();
+
+        // 1. Enrolled in Place A (bright indoor room, white background rgb(240, 245, 250))
+        $w = 200; $h = 240;
+        $imgA = imagecreatetruecolor($w, $h);
+        $bgA = imagecolorallocate($imgA, 240, 245, 250);
+        imagefill($imgA, 0, 0, $bgA);
+        // Face features
+        $skinA = imagecolorallocate($imgA, 215, 160, 125);
+        $cxA = (int)($w / 2); $cyA = (int)($h / 2);
+        imagefilledellipse($imgA, $cxA, $cyA, (int)($w * 0.58), (int)($h * 0.68), $skinA);
+        $darkA = imagecolorallocate($imgA, 40, 25, 20);
+        imagefilledellipse($imgA, $cxA - 28, $cyA - 28, 24, 14, $darkA);
+        imagefilledellipse($imgA, $cxA + 28, $cyA - 28, 24, 14, $darkA);
+        $noseA = imagecolorallocate($imgA, 180, 130, 100);
+        imagefilledrectangle($imgA, $cxA - 2, $cyA - 10, $cxA + 2, $cyA + 18, $noseA);
+        $lipsA = imagecolorallocate($imgA, 175, 75, 75);
+        imagefilledellipse($imgA, $cxA, $cyA + 42, 44, 16, $lipsA);
+        $detailA = imagecolorallocate($imgA, 50, 40, 30);
+        for ($x = $cxA - 30; $x <= $cxA + 30; $x += 4) {
+            imagesetpixel($imgA, $x, $cyA - 42, $detailA);
+        }
+        ob_start();
+        imagejpeg($imgA, null, 90);
+        $bytesPlaceA = ob_get_clean();
+        imagedestroy($imgA);
+
+        // Enroll face in Place A
+        $enrollResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($bytesPlaceA),
+        ]);
+        $enrollResp->assertStatus(201);
+
+        // 2. Verified in Place B (outdoor / green / completely different background rgb(30, 85, 45) + warmer lighting)
+        $imgB = imagecreatetruecolor($w, $h);
+        $bgB = imagecolorallocate($imgB, 30, 85, 45); // completely different background!
+        imagefill($imgB, 0, 0, $bgB);
+        // Same face, slightly shifted position (+2px) and warm ambient tint
+        $skinB = imagecolorallocate($imgB, 222, 165, 120);
+        $cxB = $cxA + 2; $cyB = $cyA + 1;
+        imagefilledellipse($imgB, $cxB, $cyB, (int)($w * 0.58), (int)($h * 0.68), $skinB);
+        $darkB = imagecolorallocate($imgB, 45, 28, 18);
+        imagefilledellipse($imgB, $cxB - 28, $cyB - 28, 24, 14, $darkB);
+        imagefilledellipse($imgB, $cxB + 28, $cyB - 28, 24, 14, $darkB);
+        $noseB = imagecolorallocate($imgB, 185, 134, 98);
+        imagefilledrectangle($imgB, $cxB - 2, $cyB - 10, $cxB + 2, $cyB + 18, $noseB);
+        $lipsB = imagecolorallocate($imgB, 180, 78, 72);
+        imagefilledellipse($imgB, $cxB, $cyB + 42, 44, 16, $lipsB);
+        $detailB = imagecolorallocate($imgB, 55, 42, 28);
+        for ($x = $cxB - 30; $x <= $cxB + 30; $x += 4) {
+            imagesetpixel($imgB, $x, $cyB - 42, $detailB);
+        }
+        ob_start();
+        imagejpeg($imgB, null, 90);
+        $bytesPlaceB = ob_get_clean();
+        imagedestroy($imgB);
+
+        // Verify face in Place B: must succeed because algorithm focuses ONLY on the face!
+        $verifyResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/verify', [
+            'face_data' => base64_encode($bytesPlaceB),
+        ]);
+
+        $verifyResp->assertStatus(200);
+        $this->assertTrue($verifyResp->json('verified'));
+        $this->assertNotEmpty($verifyResp->json('session_token'));
+    }
+
+    public function test_no_face_in_circle_cannot_enroll(): void
+    {
+        $voter = $this->createTestVoter();
+
+        // 1. Pure dark room / empty background
+        $blankBytes = $this->createSyntheticImage('blank');
+        $resp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($blankBytes),
+        ]);
+        $resp->assertStatus(422);
+        $resp->assertJsonFragment(['error_code' => 'no_face_detected']);
+
+        // Verify no profile was created
+        $voter->refresh();
+        $this->assertNull($voter->facialProfile);
+
+        // 2. Non-face object (e.g. wall/surface with random colors but no face in circle)
+        $w = 200; $h = 240;
+        $img = imagecreatetruecolor($w, $h);
+        $blueBg = imagecolorallocate($img, 60, 90, 150);
+        imagefill($img, 0, 0, $blueBg);
+        ob_start();
+        imagejpeg($img, null, 80);
+        $noFaceBytes = ob_get_clean();
+        imagedestroy($img);
+
+        $resp2 = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($noFaceBytes),
+        ]);
+        $resp2->assertStatus(422);
+        $resp2->assertJsonFragment(['error_code' => 'no_face_detected']);
+
+        $voter->refresh();
+        $this->assertNull($voter->facialProfile);
+    }
+
+    public function test_warm_surface_or_room_background_without_face_is_rejected(): void
+    {
+        $voter = $this->createTestVoter();
+
+        // 1. Warm-toned wooden table / beige wall (where chrominance falls into skin range, but NO eyes/face present)
+        $w = 200; $h = 240;
+        $img = imagecreatetruecolor($w, $h);
+        $woodBg = imagecolorallocate($img, 210, 155, 115);
+        imagefill($img, 0, 0, $woodBg);
+        // Add some table grain / surface noise
+        $noise = imagecolorallocate($img, 195, 140, 100);
+        for ($i = 0; $i < 100; $i++) {
+            imageline($img, 0, rand(0, $h), $w, rand(0, $h), $noise);
+        }
+        ob_start();
+        imagejpeg($img, null, 85);
+        $woodBytes = ob_get_clean();
+        imagedestroy($img);
+
+        $quality = $this->service->detectFaceQuality($woodBytes);
+        $this->assertFalse($quality['hasFace'], 'Warm wooden surface or wall must NOT be approved as a face.');
+        $this->assertEquals('no_face_detected', $quality['error_code']);
+
+        $resp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($woodBytes),
+        ]);
+        $resp->assertStatus(422);
+        $resp->assertJsonFragment(['error_code' => 'no_face_detected']);
+
+        $voter->refresh();
+        $this->assertNull($voter->facialProfile);
+    }
+
+    public function test_setup_profile_without_password_succeeds(): void
+    {
+        $voter = $this->createTestVoter(['is_profile_completed' => false]);
+        $org = \App\Models\Organization::firstOrCreate(
+            ['code' => 'CITE'],
+            ['name' => 'College of Information Technology Education', 'description' => 'Test']
+        );
+
+        $response = $this->actingAs($voter, 'sanctum')->postJson('/api/auth/setup-profile', [
+            'name' => 'Juan Dela Cruz',
+            'age' => 20,
+            'sex' => 'Male',
+            'course' => 'BS Information Technology',
+            'year_level' => '3rd Year',
+            'organization_id' => $org->id,
+            // Notice: NO password provided
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('user.is_profile_completed', true);
+
+        $voter->refresh();
+        $this->assertTrue($voter->is_profile_completed);
+        $this->assertEquals('Juan Dela Cruz', $voter->name);
+        $this->assertEquals($org->id, $voter->organization_id);
+    }
+
+    public function test_detect_quality_endpoint_validates_faces_properly(): void
+    {
+        $voter = $this->createTestVoter();
+
+        // 1. Blank image
+        $blankBytes = $this->createSyntheticImage('blank');
+        $blankResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/detect-quality', [
+            'face_data' => base64_encode($blankBytes),
+        ]);
+        $blankResp->assertStatus(200);
+        $this->assertFalse($blankResp->json('valid'));
+        $this->assertEquals('no_face_detected', $blankResp->json('error_code'));
+
+        // 2. Blurry image
+        $blurryBytes = $this->createSyntheticImage('blurry');
+        $blurryResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/detect-quality', [
+            'face_data' => base64_encode($blurryBytes),
+        ]);
+        $blurryResp->assertStatus(200);
+        $this->assertFalse($blurryResp->json('valid'));
+
+        // 3. Clear face
+        $faceBytes = $this->createSyntheticImage('face');
+        $faceResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/detect-quality', [
+            'face_data' => base64_encode($faceBytes),
+        ]);
+        $faceResp->assertStatus(200);
+        $this->assertTrue($faceResp->json('valid'));
+        $this->assertTrue($faceResp->json('has_face'));
+        $this->assertEquals(1, $faceResp->json('face_count'));
+    }
+
+    public function test_verify_endpoint_distinguishes_quality_issues_from_identity_mismatches(): void
+    {
+        $voter = $this->createTestVoter();
+        $clearFace = $this->createSyntheticImage('face');
+
+        // Enroll clear face
+        $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($clearFace),
+        ])->assertStatus(201);
+
+        // Verify with blurry image: must return 422 with is_quality_issue = true, NOT 401 mismatch!
+        $blurryBytes = $this->createSyntheticImage('blurry');
+        $blurryResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/verify', [
+            'face_data' => base64_encode($blurryBytes),
+        ]);
+        $blurryResp->assertStatus(422);
+        $this->assertTrue($blurryResp->json('is_quality_issue'));
+        $this->assertContains($blurryResp->json('error_code'), ['face_blurred', 'poor_lighting', 'no_face_detected']);
+
+        // Verify that verification_attempts was NOT incremented on a quality issue
+        $voter->refresh();
+        $this->assertEquals(0, $voter->facialProfile->verification_attempts);
+
+        // Verify with no face (blank): must return 422 with is_quality_issue = true
+        $blankBytes = $this->createSyntheticImage('blank');
+        $blankResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/verify', [
+            'face_data' => base64_encode($blankBytes),
+        ]);
+        $blankResp->assertStatus(422);
+        $this->assertTrue($blankResp->json('is_quality_issue'));
+
+        // Verify with missing profile (voter without enrolled face)
+        $unregisteredVoter = $this->createTestVoter();
+        $missingResp = $this->actingAs($unregisteredVoter, 'sanctum')->postJson('/api/facial/verify', [
+            'face_data' => base64_encode($clearFace),
+        ]);
+        $missingResp->assertStatus(404);
+        $this->assertEquals('not_enrolled', $missingResp->json('error_code'));
+    }
+
+    public function test_front_camera_mirroring_succeeds_in_verification(): void
+    {
+        $voter = $this->createTestVoter();
+        $faceBytes = $this->createSyntheticImage('face', 200, 240);
+
+        // Enroll standard orientation
+        $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($faceBytes),
+        ])->assertStatus(201);
+
+        // Create horizontally mirrored version of the same face (simulating front camera selfie mirror)
+        $src = imagecreatefromstring($faceBytes);
+        $w = imagesx($src);
+        $h = imagesy($src);
+        $mirrored = imagecreatetruecolor($w, $h);
+        imagecopyresampled($mirrored, $src, 0, 0, $w - 1, 0, $w, $h, -$w, $h);
+        imagedestroy($src);
+        ob_start();
+        imagejpeg($mirrored, null, 90);
+        $mirroredBytes = ob_get_clean();
+        imagedestroy($mirrored);
+
+        // Verification must pass because algorithm handles front-camera mirroring!
+        $verifyResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/verify', [
+            'face_data' => base64_encode($mirroredBytes),
+        ]);
+
+        $verifyResp->assertStatus(200);
+        $this->assertTrue($verifyResp->json('verified'));
+        $this->assertNotEmpty($verifyResp->json('session_token'));
+    }
 }

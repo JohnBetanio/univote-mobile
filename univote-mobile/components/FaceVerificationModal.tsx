@@ -46,9 +46,25 @@ export default function FaceVerificationModal({
     sharpness?: number;
     min_required?: number;
   } | null>(null);
+  const [isQualityIssue, setIsQualityIssue] = useState<boolean>(false);
 
-  const handleClose = () => {
-    if (mandatory && step !== 'success') {
+  const stepRef = React.useRef<Step>(step);
+  stepRef.current = step;
+
+  const resetAndClose = useCallback(() => {
+    setStep('idle');
+    setError(null);
+    setErrorCode(null);
+    setMatchScore(null);
+    setAttemptsRemaining(null);
+    setLastResult(null);
+    setQualityDetail(null);
+    setIsQualityIssue(false);
+    onClose();
+  }, [onClose]);
+
+  const handleClose = useCallback(() => {
+    if (mandatory && stepRef.current !== 'success') {
       Alert.alert(
         'Face Enrollment Required',
         'Facial registration is mandatory for account security. You cannot complete registration without enrolling your face. Are you sure you want to cancel registration?',
@@ -57,31 +73,15 @@ export default function FaceVerificationModal({
           {
             text: 'Cancel Registration',
             style: 'destructive',
-            onPress: () => {
-              setStep('idle');
-              setError(null);
-              setErrorCode(null);
-              setMatchScore(null);
-              setAttemptsRemaining(null);
-              setLastResult(null);
-              setQualityDetail(null);
-              onClose();
-            },
+            onPress: resetAndClose,
           },
         ]
       );
       return;
     }
 
-    setStep('idle');
-    setError(null);
-    setErrorCode(null);
-    setMatchScore(null);
-    setAttemptsRemaining(null);
-    setLastResult(null);
-    setQualityDetail(null);
-    onClose();
-  };
+    resetAndClose();
+  }, [mandatory, resetAndClose]);
 
   const startCapture = () => {
     setStep('capture');
@@ -103,13 +103,15 @@ export default function FaceVerificationModal({
                 session_token: result.data?.session_token,
                 facial_config: result.data!.facial_config,
               });
-              handleClose();
+              resetAndClose();
             }, 1200);
           } else {
             setStep('failed');
             const errMsg = result.error || (result.data as any)?.error || 'Enrollment failed.';
             setError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
-            setErrorCode(result.error_code || (result.data as any)?.error_code || null);
+            const code = result.error_code || (result.data as any)?.error_code || null;
+            setErrorCode(code);
+            setIsQualityIssue(true);
             if (result.quality_detail || (result.data as any)?.quality_detail) {
               setQualityDetail(result.quality_detail || (result.data as any)?.quality_detail);
             }
@@ -127,14 +129,21 @@ export default function FaceVerificationModal({
                 session_token: result.data?.session_token,
                 facial_config: result.data?.facial_config!,
               });
-              handleClose();
+              resetAndClose();
             }, 1200);
           } else {
             setStep('failed');
+            const code = result.error_code || result.data?.error_code || null;
+            const qualityErr = !!(
+              result.is_quality_issue ||
+              result.data?.is_quality_issue ||
+              (code && ['face_blurred', 'poor_lighting', 'half_face_detected', 'no_face_detected', 'multiple_faces'].includes(code))
+            );
+            setIsQualityIssue(qualityErr);
             setMatchScore(result.match_score ?? result.data?.match_score ?? null);
             const errMsg = result.data?.message || result.error || (result.data as any)?.error || 'Verification failed.';
             setError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
-            setErrorCode(result.error_code || result.data?.error_code || null);
+            setErrorCode(code);
             setAttemptsRemaining(result.attempts_remaining ?? result.data?.attempts_remaining ?? null);
             if (result.quality_detail || result.data?.quality_detail || result.error?.includes('quality')) {
               setQualityDetail(result.quality_detail || result.data?.quality_detail || null);
@@ -147,7 +156,7 @@ export default function FaceVerificationModal({
         setError(msg);
       }
     },
-    [action, context, onSuccess]
+    [action, context, onSuccess, resetAndClose]
   );
 
   const tryAgain = () => {
@@ -156,6 +165,7 @@ export default function FaceVerificationModal({
     setErrorCode(null);
     setMatchScore(null);
     setQualityDetail(null);
+    setIsQualityIssue(false);
   };
 
   const handleResetAttempts = async () => {
@@ -186,7 +196,7 @@ export default function FaceVerificationModal({
     if (errorCode === 'no_face_detected') {
       return (
         <View style={styles.guidanceBox}>
-          <Ionicons name="person-outline" size={24} color={Colors.error} />
+          <Ionicons name="person-outline" size={24} color="#E65100" />
           <View style={styles.guidanceTextWrap}>
             <Text style={styles.guidanceTitle}>No Face Detected</Text>
             <Text style={styles.guidanceDesc}>
@@ -200,11 +210,11 @@ export default function FaceVerificationModal({
     if (errorCode === 'half_face_detected') {
       return (
         <View style={styles.guidanceBox}>
-          <Ionicons name="scan-outline" size={24} color={Colors.error} />
+          <Ionicons name="scan-outline" size={24} color="#E65100" />
           <View style={styles.guidanceTextWrap}>
             <Text style={styles.guidanceTitle}>Partial Face / Cut Off</Text>
             <Text style={styles.guidanceDesc}>
-              Your full face from forehead to chin must be inside the oval guide. Do not tilt away or hold the camera too close.
+              Your full face from forehead to chin must be inside the oval guide. Center your face and avoid tilting.
             </Text>
           </View>
         </View>
@@ -214,11 +224,81 @@ export default function FaceVerificationModal({
     if (errorCode === 'face_blurred') {
       return (
         <View style={styles.guidanceBox}>
-          <Ionicons name="eye-off-outline" size={24} color={Colors.error} />
+          <Ionicons name="eye-off-outline" size={24} color="#E65100" />
           <View style={styles.guidanceTextWrap}>
             <Text style={styles.guidanceTitle}>Blurry Capture</Text>
             <Text style={styles.guidanceDesc}>
               Hold your phone steady while capturing. Ensure there is plenty of light on your face.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (errorCode === 'poor_lighting') {
+      return (
+        <View style={styles.guidanceBox}>
+          <Ionicons name="sunny-outline" size={24} color="#E65100" />
+          <View style={styles.guidanceTextWrap}>
+            <Text style={styles.guidanceTitle}>Poor Lighting</Text>
+            <Text style={styles.guidanceDesc}>
+              The lighting is too dim or uneven. Move to a well-lit area facing a light source.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (errorCode === 'multiple_faces') {
+      return (
+        <View style={styles.guidanceBox}>
+          <Ionicons name="people-outline" size={24} color="#E65100" />
+          <View style={styles.guidanceTextWrap}>
+            <Text style={styles.guidanceTitle}>Multiple Faces Detected</Text>
+            <Text style={styles.guidanceDesc}>
+              Only one person should be visible in frame. Ensure no other faces or photos are behind you.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (errorCode === 'api_error') {
+      return (
+        <View style={styles.guidanceBox}>
+          <Ionicons name="cloud-offline-outline" size={24} color="#E65100" />
+          <View style={styles.guidanceTextWrap}>
+            <Text style={styles.guidanceTitle}>Verification Service Unavailable</Text>
+            <Text style={styles.guidanceDesc}>
+              The facial recognition service encountered an error. Your attempts were not deducted. Please try again.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (errorCode === 'face_not_enrolled') {
+      return (
+        <View style={styles.guidanceBox}>
+          <Ionicons name="alert-circle-outline" size={24} color={Colors.error} />
+          <View style={styles.guidanceTextWrap}>
+            <Text style={[styles.guidanceTitle, { color: Colors.error }]}>No Face Profile Found</Text>
+            <Text style={[styles.guidanceDesc, { color: '#B71C1C' }]}>
+              You do not have a registered facial profile on file. Please complete face enrollment first.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    if (errorCode === 'locked_out') {
+      return (
+        <View style={styles.guidanceBox}>
+          <Ionicons name="lock-closed-outline" size={24} color={Colors.error} />
+          <View style={styles.guidanceTextWrap}>
+            <Text style={[styles.guidanceTitle, { color: Colors.error }]}>Verification Locked</Text>
+            <Text style={[styles.guidanceDesc, { color: '#B71C1C' }]}>
+              Maximum verification attempts exceeded. Please wait 15 minutes before trying again or contact election support.
             </Text>
           </View>
         </View>
@@ -230,8 +310,8 @@ export default function FaceVerificationModal({
         <View style={styles.guidanceBox}>
           <Ionicons name="shield-outline" size={24} color={Colors.error} />
           <View style={styles.guidanceTextWrap}>
-            <Text style={styles.guidanceTitle}>Identity Mismatch</Text>
-            <Text style={styles.guidanceDesc}>
+            <Text style={[styles.guidanceTitle, { color: Colors.error }]}>Identity Mismatch</Text>
+            <Text style={[styles.guidanceDesc, { color: '#B71C1C' }]}>
               The scanned face does not match the registered voter. You cannot vote unless your face matches your registered profile.
             </Text>
           </View>
@@ -346,22 +426,65 @@ export default function FaceVerificationModal({
 
             {step === 'failed' && (
               <View style={styles.statusCenter}>
-                <View style={[styles.statusIcon, styles.failedIcon]}>
-                  <Ionicons name="close" size={44} color="#fff" />
+                <View
+                  style={[
+                    styles.statusIcon,
+                    isQualityIssue ? styles.warningIcon : styles.failedIcon,
+                  ]}
+                >
+                  <Ionicons
+                    name={isQualityIssue ? 'warning-outline' : errorCode === 'api_error' ? 'cloud-offline-outline' : 'close'}
+                    size={44}
+                    color="#fff"
+                  />
                 </View>
-                <Text style={styles.failedText}>
-                  {action === 'verify' ? 'Verification Failed' : 'Enrollment Rejected'}
+                <Text
+                  style={[
+                    styles.failedText,
+                    isQualityIssue && { color: '#d97706' },
+                  ]}
+                >
+                  {action === 'verify'
+                    ? (isQualityIssue ? 'Scan Unusable' : errorCode === 'api_error' ? 'Service Unavailable' : 'Identity Mismatch')
+                    : 'Enrollment Rejected'}
                 </Text>
 
                 {renderErrorGuidance()}
 
-                <View style={styles.errorCard}>
-                  <Text style={styles.errorText}>{error || 'Please try again.'}</Text>
+                <View
+                  style={[
+                    styles.errorCard,
+                    isQualityIssue && { backgroundColor: '#FEF3C7', borderColor: '#FDE68A', borderWidth: 1 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.errorText,
+                      isQualityIssue && { color: '#B45309' },
+                    ]}
+                  >
+                    {error || 'Please try again.'}
+                  </Text>
+                  {!isQualityIssue && attemptsRemaining !== null && attemptsRemaining !== undefined && attemptsRemaining > 0 && (
+                    <Text style={styles.attemptsText}>
+                      Attempts remaining: {attemptsRemaining}
+                    </Text>
+                  )}
                 </View>
+
+                {matchScore !== null && matchScore !== undefined && !isQualityIssue && errorCode === 'no_match' && (
+                  <View style={styles.scorePill}>
+                    <Text style={styles.scoreText}>
+                      Similarity Match: {Math.round(matchScore)}% (Required: {lastResult?.threshold ?? 75}%)
+                    </Text>
+                  </View>
+                )}
 
                 <TouchableOpacity style={styles.primaryBtn} onPress={tryAgain}>
                   <Ionicons name="refresh-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-                  <Text style={styles.primaryBtnText}>Try Again</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {isQualityIssue ? 'Retake Photo' : 'Try Again'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.ghostBtn} onPress={handleClose}>
                   <Text style={styles.ghostBtnText}>Cancel</Text>
@@ -429,6 +552,7 @@ const styles = StyleSheet.create({
   },
   successIcon: { backgroundColor: Colors.success },
   failedIcon: { backgroundColor: Colors.error },
+  warningIcon: { backgroundColor: '#f59e0b' },
   successText: { fontSize: 22, fontWeight: '800', color: Colors.success, marginBottom: 10 },
   failedText: { fontSize: 22, fontWeight: '800', color: Colors.error, marginBottom: 10 },
   scorePill: {

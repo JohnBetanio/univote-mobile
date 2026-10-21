@@ -26,6 +26,7 @@ class Voter extends Authenticatable
         'avatar',
         'is_verified',
         'is_profile_completed',
+        'password_manually_set',
     ];
 
     protected $hidden = [
@@ -36,6 +37,7 @@ class Voter extends Authenticatable
     protected $casts = [
         'is_verified' => 'boolean',
         'is_profile_completed' => 'boolean',
+        'password_manually_set' => 'boolean',
         'password' => 'hashed',
     ];
 

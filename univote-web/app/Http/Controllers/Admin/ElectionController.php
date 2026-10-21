@@ -17,7 +17,14 @@ class ElectionController extends Controller
             return view('index');
         }
 
-        $elections = Election::with(['positions.candidates', 'votes', 'organization'])->get();
+        $query = Election::with(['positions.candidates', 'votes', 'organization']);
+
+        // Manage election page only displays active elections (ended elections move to Results archive)
+        if (! request()->boolean('include_ended')) {
+            $query->whereNotIn('status', ['ended', 'closed']);
+        }
+
+        $elections = $query->latest('created_at')->get();
 
         $electionsData = $elections->map(function ($election) {
             return [
@@ -109,6 +116,13 @@ class ElectionController extends Controller
 
     public function update(Request $request, Election $election)
     {
+        if ($election->status === 'ended' || $election->status === 'closed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Archived/ended elections are permanently sealed and cannot be edited.',
+            ], 422);
+        }
+
         $request->validate([
             'title' => 'required|string|max:255',
             'organization_id' => 'nullable|exists:organizations,id',
