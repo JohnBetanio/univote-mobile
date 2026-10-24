@@ -16,13 +16,15 @@ class AuditObserver
     {
         $action = $this->determineActionName($model, 'CREATE');
         $newValues = $this->filterAttributes($model->getAttributes());
+        $orgId = $model->organization_id ?? null;
 
         AuditLog::record([
-            'action'     => $action,
-            'model_type' => get_class($model),
-            'model_id'   => $model->getKey(),
-            'old_values' => null,
-            'new_values' => $newValues,
+            'action'          => $action,
+            'organization_id' => $orgId,
+            'model_type'      => get_class($model),
+            'model_id'        => $model->getKey(),
+            'old_values'      => null,
+            'new_values'      => $newValues,
         ]);
     }
 
@@ -46,13 +48,15 @@ class AuditObserver
         $action = $this->determineActionName($model, 'UPDATE');
         $oldValues = $this->filterAttributes(array_intersect_key($model->getOriginal(), $changes));
         $newValues = $this->filterAttributes($changes);
+        $orgId = $model->organization_id ?? null;
 
         AuditLog::record([
-            'action'     => $action,
-            'model_type' => get_class($model),
-            'model_id'   => $model->getKey(),
-            'old_values' => $oldValues,
-            'new_values' => $newValues,
+            'action'          => $action,
+            'organization_id' => $orgId,
+            'model_type'      => get_class($model),
+            'model_id'        => $model->getKey(),
+            'old_values'      => $oldValues,
+            'new_values'      => $newValues,
         ]);
     }
 
@@ -67,13 +71,15 @@ class AuditObserver
 
         $action = $this->determineActionName($model, 'DELETE');
         $oldValues = $this->filterAttributes($model->getAttributes());
+        $orgId = $model->organization_id ?? null;
 
         AuditLog::record([
-            'action'     => $action,
-            'model_type' => get_class($model),
-            'model_id'   => $model->getKey(),
-            'old_values' => $oldValues,
-            'new_values' => null,
+            'action'          => $action,
+            'organization_id' => $orgId,
+            'model_type'      => get_class($model),
+            'model_id'        => $model->getKey(),
+            'old_values'      => $oldValues,
+            'new_values'      => null,
         ]);
     }
 

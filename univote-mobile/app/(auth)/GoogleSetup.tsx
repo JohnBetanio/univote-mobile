@@ -216,6 +216,17 @@ export default function GoogleSetupScreen() {
                 <Ionicons name="checkmark-circle" size={18} color={Colors.success} />
               </View>
 
+              {/* University COMELEC Verification Reminder */}
+              <View style={styles.noticeBox}>
+                <View style={styles.noticeHeader}>
+                  <Ionicons name="shield-checkmark" size={18} color="#B45309" />
+                  <Text style={styles.noticeTitle}>COMELEC Voter Verification Notice</Text>
+                </View>
+                <Text style={styles.noticeText}>
+                  Please ensure all information provided is accurate and matches your official enrollment records. The University COMELEC will cross-verify your details against the university database to validate your voter eligibility and guarantee that your ballots are officially counted, especially where participation in the election is compulsory.
+                </Text>
+              </View>
+
               {/* Student Details */}
               <View style={[styles.sectionHeader, { marginTop: 12 }]}>
                 <Ionicons name="person-outline" size={16} color={Colors.primaryLight} />
@@ -514,6 +525,31 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontWeight: '700',
     marginTop: 1,
+  },
+  noticeBox: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  noticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  noticeTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#92400E',
+    letterSpacing: 0.2,
+  },
+  noticeText: {
+    fontSize: 11.5,
+    color: '#78350F',
+    lineHeight: 16.5,
   },
   sectionHeader: {
     flexDirection: 'row',

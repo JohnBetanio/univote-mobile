@@ -4,7 +4,7 @@
         <header class="dashboard-heading">
             <div class="heading-text">
                 <div class="heading-eyebrow-row">
-                    <span class="live-status-dot" :class="{ 'is-active': activeElections.length > 0 }"></span>
+                    <span class="live-status-dot" :class="{ 'is-active': activeElectionsCount > 0 }"></span>
                     <p class="eyebrow">Election operations</p>
                 </div>
                 <h1>Control center</h1>
@@ -78,9 +78,9 @@
                 <div class="metric-body">
                     <strong class="metric-number">{{ stats.total_elections }}</strong>
                     <div class="metric-tags">
-                        <span class="metric-badge badge-emerald" v-if="activeElections.length">
+                        <span class="metric-badge badge-emerald" v-if="activeElectionsCount > 0">
                             <span class="dot-live"></span>
-                            {{ activeElections.length }} live now
+                            {{ activeElectionsCount }} live now
                         </span>
                         <span class="metric-badge badge-neutral" v-else>
                             No active polls
@@ -149,11 +149,11 @@
                     </div>
                 </div>
                 <div class="metric-body">
-                    <strong class="metric-number text-status">{{ activeElections.length ? "Active" : "Ready" }}</strong>
+                    <strong class="metric-number text-status">{{ activeElectionsCount > 0 ? "Active" : "Ready" }}</strong>
                     <div class="metric-tags">
-                        <span class="metric-badge" :class="activeElections.length ? 'badge-emerald' : 'badge-neutral'">
-                            <span class="dot-live" v-if="activeElections.length"></span>
-                            {{ activeElections.length ? `${activeElections.length} Active Polls` : "Awaiting Polls" }}
+                        <span class="metric-badge" :class="activeElectionsCount > 0 ? 'badge-emerald' : 'badge-neutral'">
+                            <span class="dot-live" v-if="activeElectionsCount > 0"></span>
+                            {{ activeElectionsCount > 0 ? `${activeElectionsCount} Active Polls` : "Awaiting Polls" }}
                         </span>
                         <span class="metric-footnote">Biometric &amp; DB Synced</span>
                     </div>
@@ -635,9 +635,10 @@ export default {
     },
     data() {
         return {
-            stats: { total_elections: 0, active_elections: 0, total_voters: 0, total_votes: 0, completed_profiles: 0 },
+            stats: { total_elections: 0, active_elections: 0, completed_elections: 0, total_voters: 0, total_votes: 0, completed_profiles: 0 },
             organizationStats: [],
             electionPolls: [],
+            recentElectionsList: [],
             selectedOrgFilter: "all",
             // Real-time synchronization
             autoRefreshSeconds: 30,
@@ -660,8 +661,29 @@ export default {
         },
         elections() { return this.electionStore.elections || []; },
         activeElections() { return this.elections.filter((e) => e.status === "active"); },
-        completedElections() { return this.elections.filter((e) => e.status !== "active").length; },
-        recentElections() { return [...this.elections].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5); },
+        activeElectionsCount() {
+            if (typeof this.stats.active_elections === "number") {
+                return this.stats.active_elections;
+            }
+            if (this.electionPolls && this.electionPolls.length > 0) {
+                return this.electionPolls.length;
+            }
+            return this.activeElections.length;
+        },
+        completedElections() {
+            if (typeof this.stats.completed_elections === "number") {
+                return this.stats.completed_elections;
+            }
+            const total = this.stats.total_elections || 0;
+            const active = this.activeElectionsCount || 0;
+            return Math.max(0, total - active);
+        },
+        recentElections() {
+            if (this.recentElectionsList && this.recentElectionsList.length > 0) {
+                return this.recentElectionsList;
+            }
+            return [...this.elections].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+        },
         participationRate() { return this.stats.total_voters ? Math.min(100, Math.round((this.stats.total_votes / this.stats.total_voters) * 100)) : 0; },
         votesPerElection() { return this.stats.total_elections ? Math.round(this.stats.total_votes / this.stats.total_elections) : 0; },
 
@@ -786,8 +808,15 @@ export default {
         async loadDashboard(silent = false) {
             this.isSyncing = true;
             try {
-                const dashboardResponse = await adminAPI.getDashboard();
-                if (dashboardResponse.data) {
+                const [dashboardResponse] = await Promise.all([
+                    adminAPI.getDashboard(),
+                    this.electionStore.loadAdminElections().catch((err) => {
+                        console.error("Error loading admin elections:", err);
+                        return { elections: [] };
+                    }),
+                ]);
+
+                if (dashboardResponse?.data) {
                     if (dashboardResponse.data.stats) {
                         this.stats = { ...this.stats, ...dashboardResponse.data.stats };
                     }
@@ -797,13 +826,10 @@ export default {
                     if (dashboardResponse.data.election_polls) {
                         this.electionPolls = dashboardResponse.data.election_polls;
                     }
+                    if (dashboardResponse.data.recent_elections) {
+                        this.recentElectionsList = dashboardResponse.data.recent_elections;
+                    }
                 }
-
-                const electionsResponse = await this.electionStore.loadAdminElections();
-                const elections = electionsResponse.elections || [];
-                this.stats.total_elections = elections.length;
-                this.stats.active_elections = elections.filter((e) => e.status === "active").length;
-                this.stats.total_votes = elections.reduce((t, e) => t + (e.votes_count || 0), 0);
 
                 const now = new Date();
                 this.lastSyncedAt = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });

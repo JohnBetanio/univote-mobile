@@ -412,3 +412,37 @@ test('admin can delete individual audit log, group of audit logs, or all audit l
     $delAll->assertOk();
     expect(\App\Models\AuditLog::count())->toBe(0);
 });
+
+test('admin can create election with organization and triggers audit log correctly', function () {
+    $org = Organization::firstOrCreate(
+        ['code' => 'AUDIT_ELECTION_ORG'],
+        ['name' => 'Audit Election Organization', 'is_active' => true]
+    );
+
+    $response = $this->actingAs($this->admin, 'admin')->postJson('/admin/elections', [
+        'title' => 'Test Audit Election',
+        'description' => 'Test description',
+        'organization_id' => $org->id,
+        'positions' => [
+            [
+                'name' => 'President',
+                'max_votes' => 1,
+                'candidates' => ['Candidate A', 'Candidate B'],
+            ],
+        ],
+    ]);
+
+    $response->assertStatus(201);
+    $response->assertJsonFragment(['success' => true]);
+
+    $electionId = $response->json('election.id');
+    expect($electionId)->not->toBeNull();
+
+    $log = \App\Models\AuditLog::where('action', 'CREATE_ELECTION')
+        ->where('model_id', $electionId)
+        ->first();
+
+    expect($log)->not->toBeNull();
+    expect($log->organization_id)->toBe($org->id);
+});
+

@@ -144,14 +144,22 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
         setCapturedBase64(photo.base64);
         setCapturing(false);
         setIsValidating(true);
-        setValidationMessage('Validating face position & quality…');
+        setValidationMessage(
+          mode === 'verify'
+            ? 'Checking camera clarity & face position…'
+            : 'Validating face position & quality…'
+        );
 
         const res = await api.detectFaceQuality(photo.base64);
         setIsValidating(false);
 
         if (res.data && res.data.valid) {
           setValidationSuccess(true);
-          setValidationMessage('Face detected clearly. Tap Continue.');
+          setValidationMessage(
+            mode === 'verify'
+              ? 'Clear face captured. Tap Continue to verify your identity.'
+              : 'Face detected clearly. Tap Continue.'
+          );
           setQualityResult(res.data);
         } else {
           setValidationSuccess(false);
@@ -368,9 +376,13 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
         <Text style={styles.instructionText}>
           {previewUri
             ? (isValidating
-                ? 'Validating face inside circle guide, checking lighting and sharpness…'
+                ? (mode === 'verify'
+                    ? 'Checking image clarity & face position…'
+                    : 'Validating face inside circle guide, checking lighting and sharpness…')
                 : validationSuccess
-                ? 'Validation passed! One clear, properly positioned face detected. Tap Continue.'
+                ? (mode === 'verify'
+                    ? 'Clear face captured. Tap Continue to verify your identity against your registered profile.'
+                    : 'Validation passed! One clear, properly positioned face detected. Tap Continue.')
                 : validationMessage || 'Keep your full face inside the oval. Hold steady to avoid blur.')
             : instruction ||
               (mode === 'enroll'

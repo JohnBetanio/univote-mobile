@@ -327,6 +327,55 @@ class FacialSecurityTest extends TestCase
         $this->assertFalse($response->json('verified', false));
     }
 
+    public function test_verify_strictly_rejects_different_person_with_valid_face(): void
+    {
+        $voter = $this->createTestVoter();
+        $registeredFace = $this->createSyntheticImage('face', 200, 240);
+
+        // Enroll the real registered voter
+        $enrollResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($registeredFace),
+        ]);
+        $enrollResp->assertStatus(201);
+
+        // Create a different person: valid human face with skin, eyes, nose, mouth
+        // but different facial geometry and distinct eye spacing/mouth position
+        $w = 200; $h = 240;
+        $imgDiff = imagecreatetruecolor($w, $h);
+        $bg = imagecolorallocate($imgDiff, 220, 225, 230);
+        imagefill($imgDiff, 0, 0, $bg);
+        $skin = imagecolorallocate($imgDiff, 205, 145, 110);
+        $cx = (int)($w / 2); $cy = (int)($h / 2);
+        // Different jaw / face shape (rounder, wider)
+        imagefilledellipse($imgDiff, $cx, $cy, (int)($w * 0.68), (int)($h * 0.62), $skin);
+        // Different eye spacing (wider apart, different height)
+        $dark = imagecolorallocate($imgDiff, 30, 20, 15);
+        imagefilledellipse($imgDiff, $cx - 36, $cy - 18, 18, 12, $dark);
+        imagefilledellipse($imgDiff, $cx + 36, $cy - 18, 18, 12, $dark);
+        // Different nose position and shape
+        $nose = imagecolorallocate($imgDiff, 160, 110, 85);
+        imagefilledrectangle($imgDiff, $cx - 5, $cy + 5, $cx + 5, $cy + 25, $nose);
+        // Different mouth position (much lower near chin)
+        $lips = imagecolorallocate($imgDiff, 160, 65, 65);
+        imagefilledellipse($imgDiff, $cx, $cy + 55, 34, 12, $lips);
+        ob_start();
+        imagejpeg($imgDiff, null, 90);
+        $otherPersonBytes = ob_get_clean();
+        imagedestroy($imgDiff);
+
+        // Attempt verification with the other person
+        $verifyResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/verify', [
+            'face_data' => base64_encode($otherPersonBytes),
+            'context' => 'voting',
+        ]);
+
+        // Must strictly reject the other person!
+        $verifyResp->assertStatus(401);
+        $this->assertFalse($verifyResp->json('verified'));
+        $this->assertEquals('no_match', $verifyResp->json('error_code'));
+        $this->assertNull($verifyResp->json('session_token'));
+    }
+
     public function test_same_face_in_different_places_and_backgrounds_succeeds(): void
     {
         $voter = $this->createTestVoter();
@@ -594,5 +643,64 @@ class FacialSecurityTest extends TestCase
         $verifyResp->assertStatus(200);
         $this->assertTrue($verifyResp->json('verified'));
         $this->assertNotEmpty($verifyResp->json('session_token'));
+    }
+
+    public function test_empty_scene_or_wall_is_rejected_during_enrollment(): void
+    {
+        $voter = $this->createTestVoter();
+
+        // Simulate pointing camera at a beige/warm wall with shadows (no face, no eyes, no mouth)
+        $w = 200; $h = 240;
+        $img = imagecreatetruecolor($w, $h);
+        $wallColor = imagecolorallocate($img, 210, 175, 140);
+        imagefill($img, 0, 0, $wallColor);
+        // Add some random room shadows
+        $shadow = imagecolorallocate($img, 180, 145, 115);
+        imagefilledrectangle($img, 0, 100, 200, 140, $shadow);
+        ob_start();
+        imagejpeg($img, null, 85);
+        $wallBytes = ob_get_clean();
+        imagedestroy($img);
+
+        // Pre-flight check must report invalid
+        $qualityResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/detect-quality', [
+            'face_data' => base64_encode($wallBytes),
+        ]);
+        $qualityResp->assertStatus(200);
+        $this->assertFalse($qualityResp->json('valid'));
+        $this->assertFalse($qualityResp->json('has_face'));
+
+        // Enrollment must be rejected with 422
+        $enrollResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($wallBytes),
+        ]);
+        $enrollResp->assertStatus(422);
+        $this->assertEquals('no_face_detected', $enrollResp->json('error_code'));
+    }
+
+    public function test_covered_camera_or_hand_is_rejected_during_enrollment(): void
+    {
+        $voter = $this->createTestVoter();
+
+        // Simulate camera covered by a palm or finger (uniform skin tone without facial features)
+        $w = 200; $h = 240;
+        $img = imagecreatetruecolor($w, $h);
+        $handColor = imagecolorallocate($img, 220, 160, 125);
+        imagefill($img, 0, 0, $handColor);
+        ob_start();
+        imagejpeg($img, null, 85);
+        $handBytes = ob_get_clean();
+        imagedestroy($img);
+
+        $qualityResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/detect-quality', [
+            'face_data' => base64_encode($handBytes),
+        ]);
+        $qualityResp->assertStatus(200);
+        $this->assertFalse($qualityResp->json('valid'));
+
+        $enrollResp = $this->actingAs($voter, 'sanctum')->postJson('/api/facial/enroll', [
+            'face_data' => base64_encode($handBytes),
+        ]);
+        $enrollResp->assertStatus(422);
     }
 }

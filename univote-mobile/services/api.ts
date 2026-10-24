@@ -3,10 +3,21 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
-const expoHostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
-const expoDevHost = expoHostUri?.split(":")[0];
-const defaultApiHost = expoDevHost ?? (Platform.OS === "android" ? "10.0.2.2" : "localhost");
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? `http://${defaultApiHost}:8000/api`;
+const getApiBaseUrl = (): string => {
+  if (process.env.EXPO_PUBLIC_API_BASE_URL) {
+    return process.env.EXPO_PUBLIC_API_BASE_URL;
+  }
+  if (Platform.OS === "web") {
+    const host = typeof window !== "undefined" && window.location?.hostname ? window.location.hostname : "localhost";
+    return `http://${host}:8000/api`;
+  }
+  const expoHostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.debuggerHost;
+  const expoDevHost = expoHostUri?.split(":")[0];
+  const defaultApiHost = expoDevHost ?? (Platform.OS === "android" ? "10.0.2.2" : "localhost");
+  return `http://${defaultApiHost}:8000/api`;
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 
 interface ApiResponse<T> {
@@ -157,6 +168,9 @@ class ApiService {
   }
 
   async loadToken() {
+    if (Platform.OS === "web" && typeof window === "undefined") {
+      return;
+    }
     try {
       const token = await AsyncStorage.getItem("auth_token");
       this.token = token;

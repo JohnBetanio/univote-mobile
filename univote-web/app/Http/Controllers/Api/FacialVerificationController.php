@@ -192,11 +192,39 @@ class FacialVerificationController extends Controller
                 ], 422);
             }
 
+            // Optimize image for database storage if it is a large camera photo (> 500KB)
+            // to prevent exceeding MySQL max_allowed_packet while preserving smaller images
+            $storedFaceData = $request->face_data;
+            if (function_exists('imagecreatefromstring') && strlen($imageBytes) > 500000) {
+                $src = @imagecreatefromstring($imageBytes);
+                if ($src) {
+                    $sw = imagesx($src);
+                    $sh = imagesy($src);
+                    $maxDim = 720;
+                    if ($sw > $maxDim || $sh > $maxDim) {
+                        $scale = min($maxDim / $sw, $maxDim / $sh);
+                        $dw = (int) round($sw * $scale);
+                        $dh = (int) round($sh * $scale);
+                        $dst = imagecreatetruecolor($dw, $dh);
+                        imagecopyresampled($dst, $src, 0, 0, 0, 0, $dw, $dh, $sw, $sh);
+                        imagedestroy($src);
+                        $src = $dst;
+                    }
+                    ob_start();
+                    imagejpeg($src, null, 88);
+                    $optBytes = ob_get_clean();
+                    imagedestroy($src);
+                    if ($optBytes && strlen($optBytes) > 500) {
+                        $storedFaceData = 'data:image/jpeg;base64,' . base64_encode($optBytes);
+                    }
+                }
+            }
+
             // Save to database
             $profile = FacialProfile::updateOrCreate(
                 ['voter_id' => $voter->id],
                 [
-                    'face_data' => $request->face_data, // Keep base64 as preview and local matching source
+                    'face_data' => $storedFaceData, // Optimized base64 image for fast preview and matching
                     'face_id' => $enrollResult['face_id'],
                     'external_image_id' => $enrollResult['external_image_id'],
                     'quality_brightness' => $enrollResult['quality']['brightness'],

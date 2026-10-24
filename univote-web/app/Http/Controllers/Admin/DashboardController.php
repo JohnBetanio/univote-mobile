@@ -19,6 +19,7 @@ class DashboardController extends Controller
 
         $totalElections = Election::count();
         $activeElections = Election::where('status', 'active')->count();
+        $completedElections = Election::whereIn('status', ['ended', 'closed'])->count();
         $totalVoters = Voter::count();
         $totalVotes = Vote::count();
         $completedProfiles = Voter::where('is_profile_completed', true)->count();
@@ -155,16 +156,38 @@ class DashboardController extends Controller
             ];
         });
 
+        $recentElections = Election::with(['votes', 'organization'])
+            ->latest('created_at')
+            ->take(5)
+            ->get()
+            ->map(function ($election) {
+                return [
+                    'id' => $election->id,
+                    'title' => $election->title,
+                    'description' => $election->description,
+                    'status' => $election->status,
+                    'votes_count' => $election->votes->count(),
+                    'created_at' => $election->created_at,
+                    'organization' => $election->organization ? [
+                        'id' => $election->organization->id,
+                        'name' => $election->organization->name,
+                        'code' => $election->organization->code,
+                    ] : null,
+                ];
+            });
+
         return response()->json([
             'stats' => [
                 'total_elections' => $totalElections,
                 'active_elections' => $activeElections,
+                'completed_elections' => $completedElections,
                 'total_voters' => $totalVoters,
                 'total_votes' => $totalVotes,
                 'completed_profiles' => $completedProfiles,
             ],
             'organization_stats' => $organizationStats->values(),
             'election_polls'     => $electionPolls->values(),
+            'recent_elections'   => $recentElections->values(),
         ]);
     }
 }

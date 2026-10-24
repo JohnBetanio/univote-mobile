@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Colors } from '@/constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '@/services/api';
+import { api, API_BASE_URL } from '@/services/api';
 import { useRouter } from 'expo-router';
 
 interface ResultCandidate {
@@ -93,7 +93,7 @@ function CandidateResultCard({
   const photoUri = candidate.photo
     ? candidate.photo.startsWith('http') || candidate.photo.startsWith('data:')
       ? candidate.photo
-      : `${process.env.EXPO_PUBLIC_API_BASE_URL?.replace('/api', '') || 'http://10.0.2.2:8000'}/storage/${candidate.photo}`
+      : `${API_BASE_URL.replace(/\/api\/?$/, '')}/storage/${candidate.photo}`
     : null;
 
   return (

@@ -16,12 +16,16 @@
       }
     },
     "android": {
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#1B5E20"
       },
-      "package": "ph.edu.snsu.univote",
-      "permissions": ["android.permission.CAMERA"]
+      "package": "ph.edu.ssct.univote",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -50,6 +54,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "52c60511-5f24-466a-82ac-637acc9d8c16"
+      }
     }
   }
 }
