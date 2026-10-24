@@ -11,6 +11,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { api, FaceQualityResult } from '@/services/api';
@@ -136,36 +137,61 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.80,
         base64: true,
-        skipProcessing: false,
+        skipProcessing: false, // Apply native EXIF correction where available
       });
 
-      if (photo && photo.base64) {
-        setPreviewUri(photo.uri || null);
-        setCapturedBase64(photo.base64);
-        setCapturing(false);
-        setIsValidating(true);
-        setValidationMessage(
-          mode === 'verify'
-            ? 'Checking camera clarity & face position…'
-            : 'Validating face position & quality…'
-        );
-
-        const res = await api.detectFaceQuality(photo.base64);
-        setIsValidating(false);
-
-        if (res.data && res.data.valid) {
-          setValidationSuccess(true);
-          setValidationMessage(
-            mode === 'verify'
-              ? 'Clear face captured. Tap Continue to verify your identity.'
-              : 'Face detected clearly. Tap Continue.'
+      if (photo && photo.uri) {
+        // ─── Orientation normalization ───────────────────────────────────────────
+        // expo-camera's `base64` output may still carry wrong pixel orientation on
+        // some Android devices even with skipProcessing:false, because the raw sensor
+        // data is returned before the system EXIF rotation is applied in certain
+        // driver versions. ImageManipulator reads from the processed URI (which always
+        // has correct pixel orientation) and produces a fresh base64 that is
+        // guaranteed to be right-side-up before sending to the backend.
+        let normalizedBase64: string | null | undefined = photo.base64;
+        let normalizedUri: string = photo.uri;
+        try {
+          const result = await ImageManipulator.manipulateAsync(
+            photo.uri,
+            [],            // No geometric transforms; just force a re-encode from the URI
+            {
+              compress: 0.85,
+              format: ImageManipulator.SaveFormat.JPEG,
+              base64: true,
+            }
           );
-          setQualityResult(res.data);
+          normalizedBase64 = result.base64 ?? photo.base64;
+          normalizedUri = result.uri ?? photo.uri;
+        } catch (manipErr) {
+          // If ImageManipulator fails for any reason, fall back to the raw base64
+          console.warn('ImageManipulator orientation fix failed, using raw base64:', manipErr);
+          normalizedBase64 = photo.base64;
+        }
+        // ────────────────────────────────────────────────────────────────────────
+
+        if (!normalizedBase64) {
+          setCapturing(false);
+          return;
+        }
+
+        setPreviewUri(normalizedUri);
+        setCapturedBase64(normalizedBase64);
+        setCapturing(false);
+
+        if (mode === 'enroll') {
+          // ─── FACE REGISTRATION — NO RULES ──────────────────────────────────────
+          // Simple photo capture: no quality rules, no detection checks.
+          // The voter can simply choose to Retake or Proceed.
+          setValidationSuccess(true);
+          setIsValidating(false);
+          setValidationMessage('Photo captured. Tap Proceed to use this photo, or Retake.');
         } else {
-          setValidationSuccess(false);
-          const err = res.data?.error || res.error || 'Please position your full face clearly inside the oval frame.';
-          setValidationMessage(err);
-          setQualityResult(res.data || null);
+          // ─── FACE VERIFICATION — No pre-flight checks ─────────────────────────
+          // Identity matching is done server-side against the registered face.
+          // Just enable the Continue button immediately after capture.
+          setValidationSuccess(true);
+          setIsValidating(false);
+          setValidationMessage('Photo captured. Tap Verify to check your identity.');
         }
       } else {
         setCapturing(false);
@@ -177,14 +203,14 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
       setValidationSuccess(false);
       setValidationMessage('Camera capture failed. Please try again.');
     }
-  }, []);
+  }, [mode]);
 
   const handleContinue = useCallback(() => {
-    if (!capturedBase64 || !validationSuccess) return;
+    if (!capturedBase64) return;
     setIsSubmitting(true);
     const score = qualityResult?.quality ? qualityResult.quality.sharpness / 100 : 0.85;
     onCapture(capturedBase64, score);
-  }, [capturedBase64, validationSuccess, qualityResult, onCapture]);
+  }, [capturedBase64, qualityResult, onCapture]);
 
   const startCountdown = useCallback(() => {
     setCountdown(3);
@@ -259,7 +285,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
           <Ionicons name="close" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.topTitle}>
-          {mode === 'enroll' ? 'Enroll Face' : 'Face Verification'}
+          {mode === 'enroll' ? 'Take Photo' : 'Face Verification'}
         </Text>
         <View style={styles.switchBtn} />
       </View>
@@ -323,21 +349,22 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
               style={[
                 styles.statusDot,
                 validationSuccess && { backgroundColor: Colors.success },
-                (!validationSuccess && !isValidating && validationMessage !== null) && { backgroundColor: Colors.error },
               ]}
             />
             <Text style={styles.statusText} numberOfLines={2}>
               {previewUri
-                ? (isValidating
-                    ? 'Validating face position & quality…'
-                    : validationSuccess
-                    ? 'Face detected clearly. Tap Continue.'
-                    : validationMessage || 'Position your face inside the oval guide.')
+                ? (mode === 'enroll'
+                  ? 'Photo ready'
+                  : validationSuccess
+                    ? 'Photo captured. Tap Verify.'
+                    : 'Photo captured.')
                 : countdown !== null
-                ? `Hold still… ${countdown}`
-                : capturing
-                ? 'Analyzing face quality…'
-                : 'Fit full face inside the oval'}
+                  ? `Hold still… ${countdown}`
+                  : capturing
+                    ? 'Capturing photo…'
+                    : mode === 'enroll'
+                      ? 'Take a photo for your profile'
+                      : 'Fit full face inside the oval'}
             </Text>
           </View>
 
@@ -352,7 +379,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
           {capturing && !previewUri && (
             <View style={styles.capturingOverlay}>
               <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={styles.capturingText}>Analyzing face quality…</Text>
+              <Text style={styles.capturingText}>Capturing photo…</Text>
             </View>
           )}
 
@@ -368,26 +395,20 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
       {/* ── Instruction pill ── */}
       <View style={styles.instructionBox}>
         <Ionicons
-          name={validationSuccess ? 'checkmark-circle' : 'shield-checkmark-outline'}
+          name={validationSuccess ? 'checkmark-circle' : 'camera-outline'}
           size={18}
           color={validationSuccess ? Colors.success : Colors.primary}
           style={styles.instrIcon}
         />
         <Text style={styles.instructionText}>
           {previewUri
-            ? (isValidating
-                ? (mode === 'verify'
-                    ? 'Checking image clarity & face position…'
-                    : 'Validating face inside circle guide, checking lighting and sharpness…')
-                : validationSuccess
-                ? (mode === 'verify'
-                    ? 'Clear face captured. Tap Continue to verify your identity against your registered profile.'
-                    : 'Validation passed! One clear, properly positioned face detected. Tap Continue.')
-                : validationMessage || 'Keep your full face inside the oval. Hold steady to avoid blur.')
+            ? (mode === 'enroll'
+              ? 'Review your photo. Choose Retake to take another, or Proceed.'
+              : 'Tap Verify to check your identity against your registered profile. Tap Retake if the photo is unclear.')
             : instruction ||
-              (mode === 'enroll'
-                ? 'Keep your full face inside the oval. Hold steady to avoid blur and look directly at camera.'
-                : 'Fit your face in the oval to verify identity. Face must match your registered profile.')}
+            (mode === 'enroll'
+              ? 'Take a photo for your profile. You can retake if needed.'
+              : 'Fit your face in the oval, then tap the capture button.')}
         </Text>
       </View>
 
@@ -403,15 +424,17 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
               style={[
                 styles.primaryBtn,
                 styles.primaryBtnCompact,
-                (!validationSuccess || isValidating || isSubmitting) && styles.btnDisabled,
+                isSubmitting && styles.btnDisabled,
               ]}
               onPress={handleContinue}
-              disabled={!validationSuccess || isValidating || isSubmitting}
+              disabled={isSubmitting}
             >
-              {isSubmitting || isValidating ? (
+              {isSubmitting ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.primaryBtnText}>Continue</Text>
+                <Text style={styles.primaryBtnText}>
+                  {mode === 'enroll' ? 'Proceed' : 'Verify'}
+                </Text>
               )}
             </TouchableOpacity>
           </>

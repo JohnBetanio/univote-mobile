@@ -111,7 +111,12 @@ export default function FaceVerificationModal({
             setError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
             const code = result.error_code || (result.data as any)?.error_code || null;
             setErrorCode(code);
-            setIsQualityIssue(true);
+            const qualityErr = !!(
+              result.is_quality_issue ||
+              (result.data as any)?.is_quality_issue ||
+              (code && ['face_blurred', 'poor_lighting', 'half_face_detected', 'no_face_detected', 'multiple_faces', 'quality_rejected'].includes(code))
+            );
+            setIsQualityIssue(qualityErr);
             if (result.quality_detail || (result.data as any)?.quality_detail) {
               setQualityDetail(result.quality_detail || (result.data as any)?.quality_detail);
             }
@@ -475,7 +480,7 @@ export default function FaceVerificationModal({
                 {matchScore !== null && matchScore !== undefined && !isQualityIssue && errorCode === 'no_match' && (
                   <View style={styles.scorePill}>
                     <Text style={styles.scoreText}>
-                      Similarity Match: {Math.round(matchScore)}% (Required: {lastResult?.threshold ?? 75}%)
+                      Similarity Match: {Math.round(matchScore > 1 ? matchScore : matchScore * 100)}% (Required: {Math.round((lastResult?.threshold ?? 0.75) > 1 ? (lastResult?.threshold ?? 75) : (lastResult?.threshold ?? 0.75) * 100)}%)
                     </Text>
                   </View>
                 )}
