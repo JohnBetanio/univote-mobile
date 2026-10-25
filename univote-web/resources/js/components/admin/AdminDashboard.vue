@@ -333,7 +333,7 @@
                     <div class="table-title-wrap">
                         <p class="panel-kicker">Data Breakdown</p>
                         <h2>Organization voter statistics</h2>
-                        <p class="table-subtext">Departmental voting turnout, participation status, and demographics breakdown.</p>
+                        <p class="table-subtext">Departmental voting turnout and participation status.</p>
                     </div>
 
                     <div class="table-toolbar">
@@ -423,24 +423,6 @@
                                         <span class="sort-icon">{{ getSortIndicator('participation_percentage') }}</span>
                                     </div>
                                 </th>
-                                <th @click="toggleTableSort('male_voters')" class="sortable-th text-center">
-                                    <div class="th-content text-center">
-                                        <span>Male</span>
-                                        <span class="sort-icon">{{ getSortIndicator('male_voters') }}</span>
-                                    </div>
-                                </th>
-                                <th @click="toggleTableSort('female_voters')" class="sortable-th text-center">
-                                    <div class="th-content text-center">
-                                        <span>Female</span>
-                                        <span class="sort-icon">{{ getSortIndicator('female_voters') }}</span>
-                                    </div>
-                                </th>
-                                <th @click="toggleTableSort('other_voters')" class="sortable-th text-center">
-                                    <div class="th-content text-center">
-                                        <span>Other</span>
-                                        <span class="sort-icon">{{ getSortIndicator('other_voters') }}</span>
-                                    </div>
-                                </th>
                             </tr>
                         </thead>
                         <tbody>
@@ -466,9 +448,6 @@
                                         </span>
                                     </div>
                                 </td>
-                                <td class="text-center"><span class="badge-male">{{ org.male_voters }}</span></td>
-                                <td class="text-center"><span class="badge-female">{{ org.female_voters }}</span></td>
-                                <td class="text-center"><span class="badge-other">{{ org.other_voters }}</span></td>
                             </tr>
                         </tbody>
                         <tfoot>
@@ -491,9 +470,6 @@
                                         </span>
                                     </div>
                                 </td>
-                                <td class="text-center"><span class="badge-male">{{ filteredTotals.male }}</span></td>
-                                <td class="text-center"><span class="badge-female">{{ filteredTotals.female }}</span></td>
-                                <td class="text-center"><span class="badge-other">{{ filteredTotals.other }}</span></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -755,12 +731,9 @@ export default {
                     acc.total += org.total_voters || 0;
                     acc.voted += org.voted || 0;
                     acc.not_voted += org.not_voted || 0;
-                    acc.male += org.male_voters || 0;
-                    acc.female += org.female_voters || 0;
-                    acc.other += org.other_voters || 0;
                     return acc;
                 },
-                { total: 0, voted: 0, not_voted: 0, male: 0, female: 0, other: 0 }
+                { total: 0, voted: 0, not_voted: 0 }
             );
         },
 
@@ -886,10 +859,7 @@ export default {
                 "Total Voters",
                 "Voted",
                 "Not Voted",
-                "Turnout (%)",
-                "Male Voters",
-                "Female Voters",
-                "Other Voters"
+                "Turnout (%)"
             ];
 
             const csvRows = [
@@ -900,10 +870,7 @@ export default {
                     org.total_voters || 0,
                     org.voted || 0,
                     org.not_voted || 0,
-                    org.participation_percentage || 0,
-                    org.male_voters || 0,
-                    org.female_voters || 0,
-                    org.other_voters || 0
+                    org.participation_percentage || 0
                 ].join(","))
             ];
 
@@ -1162,7 +1129,13 @@ h1 {
 .icon-amber   { background: #fef3c7; color: #b45309; }
 .icon-purple  { background: #f5f3ff; color: #7c3aed; }
 
-.metric-body { display: flex; flex-direction: column; gap: 8px; }
+.metric-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 8px;
+}
 .metric-number {
     font-size: 34px;
     font-weight: 900;
@@ -1627,9 +1600,6 @@ h1 {
 .table-progress-text.turnout-mid  { color: #d97706; }
 .table-progress-text.turnout-low  { color: #dc2626; }
 
-.badge-male { display: inline-block; padding: 2px 7px; border-radius: 4px; background: #eff6ff; color: #1d4ed8; font-weight: 700; font-size: 12px; }
-.badge-female { display: inline-block; padding: 2px 7px; border-radius: 4px; background: #fdf2f8; color: #be185d; font-weight: 700; font-size: 12px; }
-.badge-other { display: inline-block; padding: 2px 7px; border-radius: 4px; background: #f5f3ff; color: #6d28d9; font-weight: 700; font-size: 12px; }
 
 /* Table Summary Footer */
 .table-summary-row {
