@@ -22,6 +22,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (config('app.env') === 'production' || str_starts_with(config('app.url'), 'https://')) {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
+
         // Rate limiter for facial verification endpoints (anti-spoofing)
         RateLimiter::for('facial-verify', function (Request $request) {
             return Limit::perMinute(6)->by($request->user()?->id ?: $request->ip());
