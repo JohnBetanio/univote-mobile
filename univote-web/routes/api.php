@@ -15,6 +15,14 @@ Route::get('/health', function () {
     return response()->json(['status' => 'ok', 'message' => 'API is running']);
 });
 
+Route::get('/run-migrations', function () {
+    \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+    return response()->json([
+        'status' => 'success',
+        'output' => \Illuminate\Support\Facades\Artisan::output()
+    ]);
+});
+
 // Public routes
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
@@ -71,13 +79,5 @@ Route::middleware('auth:sanctum')->group(function () {
     // User routes (admin)
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/{id}', [UserController::class, 'show']);
-
-    Route::get('/run-migrations', function () {
-    \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
-    return response()->json([
-        'status' => 'success',
-        'output' => \Illuminate\Support\Facades\Artisan::output()
-    ]);
 });
 
-});
