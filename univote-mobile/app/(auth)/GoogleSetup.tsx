@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TextInput,
+  Pressable,
   TouchableOpacity,
   StyleSheet,
   Image,
@@ -84,6 +85,7 @@ export default function GoogleSetupScreen() {
   // Profile details
   const [fullName, setFullName] = useState(user?.name || '');
   const [studentId, setStudentId] = useState(user?.student_id || '');
+  const studentIdInputRef = useRef<TextInput>(null);
   const [course, setCourse] = useState(user?.course && user.course !== 'Not Specified' ? user.course : '');
   const [yearLevel, setYearLevel] = useState(user?.year_level || '1st Year');
   const [organizationId, setOrganizationId] = useState<number | undefined>(user?.organization_id || undefined);
@@ -323,6 +325,7 @@ export default function GoogleSetupScreen() {
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
         {/* Brand Header */}
@@ -433,19 +436,29 @@ export default function GoogleSetupScreen() {
                 <Text style={styles.label}>
                   Student ID Number <Text style={styles.requiredStar}>*</Text>
                 </Text>
-                <View style={[styles.inputContainer, focusedField === 'studentId' && styles.inputContainerFocused]}>
+                <Pressable
+                  style={[styles.inputContainer, focusedField === 'studentId' && styles.inputContainerFocused]}
+                  onPress={() => studentIdInputRef.current?.focus()}
+                  accessibilityRole="none"
+                >
                   <Ionicons name="card-outline" size={18} color={focusedField === 'studentId' ? Colors.primaryLight : '#9CA3AF'} style={styles.inputIcon} />
                   <TextInput
+                    ref={studentIdInputRef}
                     style={styles.textInput}
                     placeholder="e.g. 2022-01452"
                     placeholderTextColor="#9CA3AF"
                     value={studentId}
                     onChangeText={setStudentId}
+                    editable
+                    showSoftInputOnFocus
                     autoCapitalize="characters"
+                    autoCorrect={false}
+                    keyboardType="default"
+                    returnKeyType="done"
                     onFocus={() => setFocusedField('studentId')}
                     onBlur={() => setFocusedField(null)}
                   />
-                </View>
+                </Pressable>
                 <Text style={styles.hint}>Official university ID / Certificate of Registration (COR) number</Text>
               </View>
 
