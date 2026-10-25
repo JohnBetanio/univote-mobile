@@ -14,12 +14,15 @@ RUN apk add --no-cache \
     nginx \
     curl \
     libpng-dev \
+    libjpeg-turbo-dev \
+    freetype-dev \
     libxml2-dev \
     libzip-dev \
     oniguruma-dev \
     mysql-client \
     postgresql-dev \
     supervisor \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install pdo pdo_mysql pdo_pgsql mbstring exif pcntl bcmath gd zip
 
 # Configure PHP upload and POST limits for facial recognition photos
