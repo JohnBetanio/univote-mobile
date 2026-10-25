@@ -23,6 +23,26 @@ Route::get('/run-migrations', function () {
     ]);
 });
 
+Route::get('/create-admin', function (\Illuminate\Http\Request $request) {
+    $email = $request->query('email', 'admin@example.com');
+    $password = $request->query('password', 'password');
+    $name = $request->query('name', 'Admin');
+
+    $admin = \App\Models\Admin::updateOrCreate(
+        ['email' => $email],
+        [
+            'name' => $name,
+            'password' => \Illuminate\Support\Facades\Hash::make($password),
+        ]
+    );
+
+    return response()->json([
+        'status' => 'success',
+        'message' => "Admin [{$admin->email}] is ready! You can now log in.",
+        'email' => $admin->email,
+    ]);
+});
+
 // Public routes
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
