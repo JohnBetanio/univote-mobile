@@ -17,8 +17,8 @@ import { useRouter } from 'expo-router';
 interface ResultCandidate {
   id: number;
   name: string;
-  vote_count: number;
-  percentage: number;
+  vote_count: number | null;
+  percentage: number | null;
   winner: boolean;
   photo?: string | null;
 }
@@ -36,6 +36,7 @@ interface ResultElection {
   positions: ResultPosition[];
   total_votes: number;
   organization?: string | null;
+  results_sealed?: boolean;
 }
 
 const AVATAR_BG_COLORS = ['#E8F5E9', '#E3F2FD', '#F3E5F5', '#FFF3E0', '#E0F2F1', '#FBE9E7'];
@@ -78,17 +79,19 @@ function CandidateResultCard({
   isLeader,
   rank,
   isLive,
+  isSealed,
 }: {
   candidate: ResultCandidate;
   isLeader: boolean;
   rank: number;
   isLive?: boolean;
+  isSealed?: boolean;
 }) {
   const [photoError, setPhotoError] = useState(false);
-  const isWinner = candidate.winner || isLeader;
+  const isWinner = !isSealed && (candidate.winner || isLeader);
   const initials = getInitials(candidate.name);
   const avatar = getAvatarColors(candidate.name);
-  const percentage = Math.min(100, Math.max(0, candidate.percentage || 0));
+  const percentage = candidate.percentage != null ? Math.min(100, Math.max(0, candidate.percentage)) : 0;
 
   const photoUri = candidate.photo
     ? candidate.photo.startsWith('http') || candidate.photo.startsWith('data:')
@@ -125,21 +128,23 @@ function CandidateResultCard({
               </Text>
             )}
           </View>
-          <View
-            style={[
-              styles.rankBadge,
-              isWinner ? (isLive ? styles.rankBadgeLeader : styles.rankBadgeWinner) : styles.rankBadgeNormal,
-            ]}
-          >
-            <Text
+          {!isSealed && (
+            <View
               style={[
-                styles.rankBadgeText,
-                isWinner && (isLive ? styles.rankBadgeTextLeader : styles.rankBadgeTextWinner),
+                styles.rankBadge,
+                isWinner ? (isLive ? styles.rankBadgeLeader : styles.rankBadgeWinner) : styles.rankBadgeNormal,
               ]}
             >
-              #{rank}
-            </Text>
-          </View>
+              <Text
+                style={[
+                  styles.rankBadgeText,
+                  isWinner && (isLive ? styles.rankBadgeTextLeader : styles.rankBadgeTextWinner),
+                ]}
+              >
+                #{rank}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Name & Badge Column */}
@@ -156,38 +161,49 @@ function CandidateResultCard({
             </Text>
             {isWinner && <WinnerBadge isLive={isLive} />}
           </View>
-          <Text style={styles.candidateVotesText}>
-            <Text style={styles.votesBold}>{candidate.vote_count.toLocaleString()}</Text> vote{candidate.vote_count !== 1 ? 's' : ''}
-          </Text>
+          {isSealed ? (
+            <View style={styles.sealedVotesPill}>
+              <Ionicons name="lock-closed" size={11} color="#6B7280" />
+              <Text style={styles.sealedVotesText}>Votes sealed until polls close</Text>
+            </View>
+          ) : (
+            <Text style={styles.candidateVotesText}>
+              <Text style={styles.votesBold}>{(candidate.vote_count ?? 0).toLocaleString()}</Text> vote{(candidate.vote_count ?? 0) !== 1 ? 's' : ''}
+            </Text>
+          )}
         </View>
 
         {/* Percentage Label */}
-        <View style={styles.percentageColumn}>
-          <Text
-            style={[
-              styles.percentageNumberText,
-              isWinner
-                ? (isLive ? styles.percentageTextLeader : styles.percentageTextWinner)
-                : styles.percentageTextNormal,
-            ]}
-          >
-            {percentage}%
-          </Text>
-        </View>
+        {!isSealed && (
+          <View style={styles.percentageColumn}>
+            <Text
+              style={[
+                styles.percentageNumberText,
+                isWinner
+                  ? (isLive ? styles.percentageTextLeader : styles.percentageTextWinner)
+                  : styles.percentageTextNormal,
+              ]}
+            >
+              {percentage}%
+            </Text>
+          </View>
+        )}
       </View>
 
-      {/* Progress Bar */}
-      <View style={styles.progressBarTrack}>
-        <View
-          style={[
-            styles.progressBarFill,
-            { width: `${percentage}%` },
-            isWinner
-              ? (isLive ? styles.progressBarFillLeader : styles.progressBarFillWinner)
-              : styles.progressBarFillNormal,
-          ]}
-        />
-      </View>
+      {/* Progress Bar (Only visible when unsealed) */}
+      {!isSealed && (
+        <View style={styles.progressBarTrack}>
+          <View
+            style={[
+              styles.progressBarFill,
+              { width: `${percentage}%` },
+              isWinner
+                ? (isLive ? styles.progressBarFillLeader : styles.progressBarFillWinner)
+                : styles.progressBarFillNormal,
+            ]}
+          />
+        </View>
+      )}
     </View>
   );
 }
@@ -226,6 +242,7 @@ export default function VoterResultsScreen() {
             positions: r.data.positions || [],
             total_votes: r.data.total_votes || 0,
             organization: (r.data.election as any)?.organization?.name || null,
+            results_sealed: (r.data as any)?.results_sealed ?? (r.data.election.status === 'active'),
           });
         }
       }
@@ -320,22 +337,22 @@ export default function VoterResultsScreen() {
           <View style={styles.heroBadgeRow}>
             <View style={styles.certifiedTag}>
               <Ionicons
-                name={isLiveMode ? "pulse-outline" : "ribbon-outline"}
+                name={isLiveMode ? "lock-closed-outline" : "ribbon-outline"}
                 size={13}
                 color={isLiveMode ? "#93C5FD" : "#A7F3D0"}
               />
               <Text style={styles.certifiedTagText}>
-                {isLiveMode ? 'Real-Time Preliminary Tally' : 'Official Certified Outcomes'}
+                {isLiveMode ? 'Ongoing Elections (Tallies Sealed)' : 'Official Certified Outcomes'}
               </Text>
             </View>
             <View style={isLiveMode ? styles.liveHeaderPill : styles.closedPill}>
               <Ionicons
-                name={isLiveMode ? "radio" : "lock-closed"}
+                name={isLiveMode ? "time-outline" : "lock-closed"}
                 size={10}
-                color={isLiveMode ? "#EF4444" : "#D1D5DB"}
+                color={isLiveMode ? "#60A5FA" : "#D1D5DB"}
               />
               <Text style={isLiveMode ? styles.liveHeaderPillText : styles.closedPillText}>
-                {isLiveMode ? 'Live' : 'Audited'}
+                {isLiveMode ? 'In Progress' : 'Audited'}
               </Text>
             </View>
           </View>
@@ -343,7 +360,7 @@ export default function VoterResultsScreen() {
           <Text style={styles.heroTitle}>Election Results</Text>
           <Text style={styles.heroSubtitle}>
             {isLiveMode
-              ? 'Real-time ballot tabulations and leading candidates for ongoing campus elections.'
+              ? 'Candidate vote counts are strictly sealed during active voting to protect election integrity.'
               : 'Certified tally counts and elected student leaders from concluded elections.'}
           </Text>
 
@@ -381,7 +398,7 @@ export default function VoterResultsScreen() {
               activeOpacity={0.8}
             >
               <Ionicons
-                name="pulse-outline"
+                name="time-outline"
                 size={13}
                 color={isLiveMode ? Colors.primary : 'rgba(255,255,255,0.85)'}
               />
@@ -391,7 +408,7 @@ export default function VoterResultsScreen() {
                   isLiveMode && styles.modeTabTextActive,
                 ]}
               >
-                Live Tallies
+                Active Elections
               </Text>
             </TouchableOpacity>
           </View>
@@ -521,9 +538,9 @@ export default function VoterResultsScreen() {
                     <Text style={styles.electionSheetTitle}>{currentElection.title}</Text>
                   </View>
                   {isLiveMode ? (
-                    <View style={styles.liveBadge}>
-                      <Ionicons name="radio" size={11} color="#DC2626" />
-                      <Text style={styles.liveBadgeText}>Live Tally</Text>
+                    <View style={styles.sealedBadge}>
+                      <Ionicons name="lock-closed" size={11} color="#2563EB" />
+                      <Text style={styles.sealedBadgeText}>Tallies Sealed</Text>
                     </View>
                   ) : (
                     <View style={styles.certifiedBadge}>
@@ -537,7 +554,9 @@ export default function VoterResultsScreen() {
                 <View style={styles.turnoutRibbon}>
                   <View style={styles.turnoutItem}>
                     <Ionicons name="people" size={13} color="#6B7280" />
-                    <Text style={styles.turnoutLabel}>Total Ballots Counted:</Text>
+                    <Text style={styles.turnoutLabel}>
+                      {isLiveMode ? 'Total Ballots Cast:' : 'Total Ballots Counted:'}
+                    </Text>
                     <Text style={styles.turnoutVal}>{currentElection.total_votes.toLocaleString()}</Text>
                   </View>
                   <View style={styles.turnoutItem}>
@@ -546,11 +565,27 @@ export default function VoterResultsScreen() {
                     <Text style={styles.turnoutVal}>{currentElection.positions.length}</Text>
                   </View>
                 </View>
+
+                {/* Security Sealed Notice Box for Active Elections */}
+                {isLiveMode && (
+                  <View style={styles.sealedBannerBox}>
+                    <Ionicons name="shield-checkmark" size={16} color="#1D4ED8" />
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      <Text style={styles.sealedBannerTitle}>Candidate Tallies Strictly Sealed</Text>
+                      <Text style={styles.sealedBannerDesc}>
+                        To prevent voting bias, individual candidate vote counts and rankings remain sealed until this election officially concludes.
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
 
               {/* Positions & Tally Breakdown */}
               {currentElection.positions.map((pos, pIdx) => {
-                const sortedCandidates = [...pos.candidates].sort((a, b) => b.vote_count - a.vote_count);
+                const isSealed = isLiveMode || currentElection.status === 'active' || !!currentElection.results_sealed;
+                const sortedCandidates = isSealed
+                  ? [...pos.candidates].sort((a, b) => a.name.localeCompare(b.name))
+                  : [...pos.candidates].sort((a, b) => (b.vote_count ?? 0) - (a.vote_count ?? 0));
 
                 return (
                   <View key={pos.id} style={styles.positionWrapper}>
@@ -572,7 +607,7 @@ export default function VoterResultsScreen() {
                     {/* Candidate Cards */}
                     <View style={styles.candidatesBlock}>
                       {sortedCandidates.map((c, cIdx) => {
-                        const isLeader = cIdx === 0 && c.vote_count > 0;
+                        const isLeader = !isSealed && cIdx === 0 && (c.vote_count ?? 0) > 0;
                         return (
                           <CandidateResultCard
                             key={c.id}
@@ -580,6 +615,7 @@ export default function VoterResultsScreen() {
                             isLeader={isLeader}
                             rank={cIdx + 1}
                             isLive={isLiveMode}
+                            isSealed={isSealed}
                           />
                         );
                       })}
@@ -971,6 +1007,59 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     color: '#DC2626',
+  },
+  sealedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  sealedBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#1D4ED8',
+  },
+  sealedBannerBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  sealedBannerTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1E40AF',
+    marginBottom: 2,
+  },
+  sealedBannerDesc: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#2563EB',
+  },
+  sealedVotesPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 3,
+  },
+  sealedVotesText: {
+    fontSize: 11,
+    color: '#4B5563',
+    fontWeight: '600',
   },
   turnoutRibbon: {
     flexDirection: 'row',

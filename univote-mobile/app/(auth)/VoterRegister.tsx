@@ -34,8 +34,6 @@ export default function VoterRegisterScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [age, setAge] = useState('');
-  const [sex, setSex] = useState('');
   const [course, setCourse] = useState('');
   const [yearLevel, setYearLevel] = useState('');
   const [organizations, setOrganizations] = useState<{ id: number; name: string; code: string }[]>([]);
@@ -82,14 +80,14 @@ export default function VoterRegisterScreen() {
       return;
     }
 
-    if (!fullName.trim() || !age.trim() || !sex || !course.trim() || !yearLevel || !organizationId) {
+    if (!fullName.trim() || !course.trim() || !yearLevel || !organizationId) {
       Alert.alert('Missing Fields', 'Please complete your profile details.');
       return;
     }
 
     setLoading(true);
     const result = await registerStudent({
-      fullName, email, password, age: Number(age), sex, course, yearLevel, organizationId,
+      fullName, email, password, course, yearLevel, organizationId,
     });
     setLoading(false);
 
@@ -176,14 +174,6 @@ export default function VoterRegisterScreen() {
               <View style={styles.field}>
                 <Text style={styles.label}>Full Name</Text>
                 <TextInput style={styles.input} placeholder="Enter your full name" placeholderTextColor={Colors.textMuted} value={fullName} onChangeText={setFullName} autoCapitalize="words" />
-              </View>
-              <View style={styles.field}>
-                <Text style={styles.label}>Age</Text>
-                <TextInput style={styles.input} placeholder="Enter your age" placeholderTextColor={Colors.textMuted} value={age} onChangeText={setAge} keyboardType="number-pad" />
-              </View>
-              <View style={styles.field}>
-                <Text style={styles.label}>Sex</Text>
-                <View style={styles.choiceRow}>{['Male', 'Female', 'Other'].map((option) => <TouchableOpacity key={option} style={[styles.choice, sex === option && styles.choiceSelected]} onPress={() => setSex(option)}><Text style={[styles.choiceText, sex === option && styles.choiceTextSelected]}>{option}</Text></TouchableOpacity>)}</View>
               </View>
               <View style={styles.field}>
                 <Text style={styles.label}>Course</Text>

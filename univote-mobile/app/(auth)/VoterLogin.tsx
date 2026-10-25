@@ -8,9 +8,11 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/Colors';
+import { API_BASE_URL } from '@/services/api';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -20,17 +22,23 @@ export default function VoterLoginScreen() {
   const [loading, setLoading] = useState(false);
   const mountedRef = useRef(true);
   const isLoggingInWithGoogle = useRef(false);
+  const processedTokens = useRef<Set<string>>(new Set());
 
   const handleGoogleLogin = async (idToken: string) => {
-    if (isLoggingInWithGoogle.current) return;
+    if (!idToken || processedTokens.current.has(idToken) || isLoggingInWithGoogle.current) {
+      return;
+    }
+    processedTokens.current.add(idToken);
     isLoggingInWithGoogle.current = true;
     safeSetLoading(true);
     try {
       const result = await loginWithGoogle({ idToken });
       if (!result.success && mountedRef.current) {
+        processedTokens.current.delete(idToken);
         Alert.alert('Access Restricted', result.error || 'Google Sign-In failed');
       }
     } catch (err: any) {
+      processedTokens.current.delete(idToken);
       if (mountedRef.current) {
         Alert.alert('Google Sign-In Error', err?.message || 'Failed to authenticate with Google');
       }
@@ -96,16 +104,35 @@ export default function VoterLoginScreen() {
           `&scope=${encodeURIComponent('openid email profile')}` +
           `&nonce=${encodeURIComponent(nonce)}`;
       } else {
-        returnUrl = makeRedirectUri({ scheme: 'univote', path: 'auth/google' });
-        const proxyBase = 'https://auth.expo.io/@johnbetanio/univote';
-        const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-          `client_id=${encodeURIComponent(clientId)}` +
-          `&redirect_uri=${encodeURIComponent(proxyBase)}` +
-          `&response_type=id_token` +
-          `&scope=${encodeURIComponent('openid email profile')}` +
-          `&nonce=${encodeURIComponent(nonce)}`;
+        const isExpoGo =
+          Constants.appOwnership === 'expo' ||
+          Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
-        authUrl = `${proxyBase}/start?authUrl=${encodeURIComponent(googleAuthUrl)}&returnUrl=${encodeURIComponent(returnUrl)}`;
+        if (isExpoGo) {
+          // Development inside Expo Go app: uses registered Expo auth proxy
+          returnUrl = makeRedirectUri({ scheme: 'univote', path: 'auth/google' });
+          const proxyBase = 'https://auth.expo.io/@johnbetanio/univote';
+          const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+            `client_id=${encodeURIComponent(clientId)}` +
+            `&redirect_uri=${encodeURIComponent(proxyBase)}` +
+            `&response_type=id_token` +
+            `&scope=${encodeURIComponent('openid email profile')}` +
+            `&nonce=${encodeURIComponent(nonce)}`;
+
+          authUrl = `${proxyBase}/start?authUrl=${encodeURIComponent(googleAuthUrl)}&returnUrl=${encodeURIComponent(returnUrl)}`;
+        } else {
+          // Standalone production / preview APK:
+          // Google OAuth only accepts HTTPS redirect URIs, so Google redirects to our
+          // verified backend callback, which immediately deep-links into univote://auth/google
+          returnUrl = 'univote://auth/google';
+          const backendCallback = `${API_BASE_URL.replace(/\/api\/?$/, '')}/voter/auth/google/callback`;
+          authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+            `client_id=${encodeURIComponent(clientId)}` +
+            `&redirect_uri=${encodeURIComponent(backendCallback)}` +
+            `&response_type=id_token` +
+            `&scope=${encodeURIComponent('openid email profile')}` +
+            `&nonce=${encodeURIComponent(nonce)}`;
+        }
       }
 
       const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);

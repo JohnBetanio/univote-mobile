@@ -129,6 +129,48 @@ class ElectionController extends Controller
     {
         $election = Election::with(['organization', 'positions.candidates.votes'])->findOrFail($id);
 
+        $isClosed = in_array($election->status, ['ended', 'closed']);
+        $user = request()->user();
+        $isVoter = $user instanceof \App\Models\Voter;
+
+        // Security / Integrity enforcement:
+        // Candidate vote counts and standings are strictly sealed until the election has ended/closed.
+        if (!$isClosed && $isVoter) {
+            $positions = $election->positions->map(function ($position) {
+                return [
+                    'id' => $position->id,
+                    'name' => $position->name,
+                    'candidates' => $position->candidates->map(function ($candidate) {
+                        return [
+                            'id' => $candidate->id,
+                            'name' => $candidate->name,
+                            'photo' => $candidate->photo,
+                            'vote_count' => null,
+                            'percentage' => null,
+                            'winner' => false,
+                        ];
+                    })->values(),
+                ];
+            })->values();
+
+            return response()->json([
+                'election' => [
+                    'id' => $election->id,
+                    'title' => $election->title,
+                    'status' => $this->mapStatusToApi($election->status),
+                    'organization' => $election->organization ? [
+                        'id' => $election->organization->id,
+                        'name' => $election->organization->name,
+                    ] : null,
+                ],
+                'positions' => $positions,
+                'total_votes' => $election->votes()->count(),
+                'results_sealed' => true,
+                'message' => 'Official vote tallies are sealed until voting has concluded to maintain election integrity.',
+            ]);
+        }
+
+        // Concluded elections (or Admin view): Return full certified vote tallies
         $positions = $election->positions->map(function ($position) {
             $candidates = $position->candidates()->withCount('votes')->get();
             $totalVotes = $candidates->sum('votes_count');
@@ -164,6 +206,7 @@ class ElectionController extends Controller
             ],
             'positions' => $positions,
             'total_votes' => $election->votes()->count(),
+            'results_sealed' => false,
         ]);
     }
 }

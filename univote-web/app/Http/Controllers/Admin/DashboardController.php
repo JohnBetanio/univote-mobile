@@ -34,20 +34,6 @@ class DashboardController extends Controller
             $notVoted = max(0, $total - $voted);
             $percentage = $total > 0 ? round(($voted / $total) * 100, 1) : 0.0;
 
-            $male = $orgVoters->filter(function ($v) {
-                return strtolower(trim((string) $v->sex)) === 'male';
-            })->count();
-
-            $female = $orgVoters->filter(function ($v) {
-                return strtolower(trim((string) $v->sex)) === 'female';
-            })->count();
-
-            $other = $orgVoters->filter(function ($v) {
-                $sex = strtolower(trim((string) $v->sex));
-
-                return $sex !== 'male' && $sex !== 'female';
-            })->count();
-
             return [
                 'id' => $org->id,
                 'name' => $org->name,
@@ -56,9 +42,6 @@ class DashboardController extends Controller
                 'voted' => $voted,
                 'not_voted' => $notVoted,
                 'participation_percentage' => $percentage,
-                'male_voters' => $male,
-                'female_voters' => $female,
-                'other_voters' => $other,
             ];
         });
 
@@ -69,13 +52,6 @@ class DashboardController extends Controller
             $uVoted = $unassignedVoters->where('votes_count', '>', 0)->count();
             $uNotVoted = max(0, $uTotal - $uVoted);
             $uPercentage = $uTotal > 0 ? round(($uVoted / $uTotal) * 100, 1) : 0.0;
-            $uMale = $unassignedVoters->filter(fn ($v) => strtolower(trim((string) $v->sex)) === 'male')->count();
-            $uFemale = $unassignedVoters->filter(fn ($v) => strtolower(trim((string) $v->sex)) === 'female')->count();
-            $uOther = $unassignedVoters->filter(function ($v) {
-                $sex = strtolower(trim((string) $v->sex));
-
-                return $sex !== 'male' && $sex !== 'female';
-            })->count();
 
             $organizationStats->push([
                 'id' => null,
@@ -85,9 +61,6 @@ class DashboardController extends Controller
                 'voted' => $uVoted,
                 'not_voted' => $uNotVoted,
                 'participation_percentage' => $uPercentage,
-                'male_voters' => $uMale,
-                'female_voters' => $uFemale,
-                'other_voters' => $uOther,
             ]);
         }
 

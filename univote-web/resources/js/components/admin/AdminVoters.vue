@@ -65,8 +65,6 @@
                     <thead>
                         <tr>
                             <th>Name</th>
-                            <th>Age</th>
-                            <th>Sex</th>
                             <th>Course</th>
                             <th>Organization</th>
                             <th>Voting Status</th>
@@ -80,15 +78,6 @@
                                     <span class="voter-name">{{ voter.name }}</span>
                                     <span class="voter-email">{{ voter.email }}</span>
                                 </div>
-                            </td>
-                            <td>
-                                <span class="voter-age">{{ voter.age || "—" }}</span>
-                            </td>
-                            <td>
-                                <span v-if="voter.sex" :class="['sex-badge', `sex-${voter.sex.toLowerCase()}`]">
-                                    {{ voter.sex }}
-                                </span>
-                                <span v-else class="text-muted">—</span>
                             </td>
                             <td>
                                 <span class="voter-course" :title="voter.course || ''">{{ voter.course || "—" }}</span>
@@ -179,38 +168,6 @@
                             <span v-if="validationErrors.name" class="field-error">{{ validationErrors.name }}</span>
                         </div>
 
-                        <!-- Age & Sex Row -->
-                        <div class="form-row">
-                            <div class="form-group form-col">
-                                <label for="editAge" class="form-label">Age</label>
-                                <input
-                                    id="editAge"
-                                    v-model.number="editForm.age"
-                                    type="number"
-                                    min="15"
-                                    max="120"
-                                    class="form-input"
-                                    :class="{ 'input-error': validationErrors.age }"
-                                    placeholder="e.g. 20"
-                                />
-                                <span v-if="validationErrors.age" class="field-error">{{ validationErrors.age }}</span>
-                            </div>
-
-                            <div class="form-group form-col">
-                                <label for="editSex" class="form-label">Sex</label>
-                                <select
-                                    id="editSex"
-                                    v-model="editForm.sex"
-                                    class="form-input"
-                                >
-                                    <option value="">Select Sex</option>
-                                    <option value="Male">Male</option>
-                                    <option value="Female">Female</option>
-                                    <option value="Other">Other</option>
-                                </select>
-                            </div>
-                        </div>
-
                         <!-- Course -->
                         <div class="form-group">
                             <label for="editCourse" class="form-label">Course / Program</label>
@@ -296,8 +253,6 @@ export default {
             editingVoterId: null,
             editForm: {
                 name: "",
-                age: null,
-                sex: "",
                 course: "",
                 organization_id: null,
             },
@@ -388,8 +343,6 @@ export default {
             this.editingVoterId = voter.id;
             this.editForm = {
                 name: voter.name || "",
-                age: voter.age !== null && voter.age !== undefined ? Number(voter.age) : null,
-                sex: voter.sex ? voter.sex.charAt(0).toUpperCase() + voter.sex.slice(1).toLowerCase() : "",
                 course: voter.course || "",
                 organization_id: voter.organization_id ? Number(voter.organization_id) : null,
             };
@@ -407,13 +360,6 @@ export default {
                 this.validationErrors.name = "Full name is required.";
             }
 
-            if (this.editForm.age !== null && this.editForm.age !== "") {
-                const ageNum = Number(this.editForm.age);
-                if (isNaN(ageNum) || ageNum < 15 || ageNum > 120) {
-                    this.validationErrors.age = "Age must be between 15 and 120.";
-                }
-            }
-
             return Object.keys(this.validationErrors).length === 0;
         },
         async saveVoterEdit() {
@@ -427,8 +373,6 @@ export default {
             try {
                 const payload = {
                     name: this.editForm.name.trim(),
-                    age: this.editForm.age ? Number(this.editForm.age) : null,
-                    sex: this.editForm.sex || null,
                     course: this.editForm.course ? this.editForm.course.trim() : null,
                     organization_id: this.editForm.organization_id ? Number(this.editForm.organization_id) : null,
                 };

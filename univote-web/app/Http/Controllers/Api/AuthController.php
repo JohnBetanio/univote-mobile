@@ -15,8 +15,8 @@ class AuthController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
-            'age' => 'required|integer|min:1|max:120',
-            'sex' => 'required|string|max:30',
+            'age' => 'nullable|integer|min:1|max:120',
+            'sex' => 'nullable|string|max:30',
             'course' => 'required|string|max:255',
             'year_level' => 'required|string|max:50',
             'email' => 'required|string|email|max:255|unique:voters',
@@ -30,8 +30,8 @@ class AuthController extends Controller
 
         $voter = Voter::create([
             'name' => $request->name,
-            'age' => $request->age,
-            'sex' => $request->sex,
+            'age' => $request->age ?? null,
+            'sex' => $request->sex ?? null,
             'course' => $request->course,
             'year_level' => $request->year_level,
             'email' => $request->email,
@@ -186,6 +186,7 @@ class AuthController extends Controller
                 'code' => $user->organization->code,
             ] : null;
             $response['google_id'] = $user->google_id;
+            $response['student_id'] = $user->student_id;
             $response['age'] = $user->age;
             $response['sex'] = $user->sex;
             $response['course'] = $user->course;
@@ -242,31 +243,44 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // Find or create voter
-        $voter = Voter::where('email', $email)->orWhere(function ($q) use ($googleId) {
-            if ($googleId) $q->where('google_id', $googleId);
-        })->first();
+        // Find or create voter (case-insensitive and trimmed for both MySQL and PostgreSQL)
+        $email = trim(strtolower($email));
+        $voter = Voter::whereRaw('LOWER(TRIM(email)) = ?', [$email])
+            ->orWhere(function ($q) use ($googleId) {
+                if ($googleId) $q->where('google_id', $googleId);
+            })->first();
 
         $isNewUser = false;
 
         if (!$voter) {
-            $isNewUser = true;
-            $voter = Voter::create([
-                'name' => $name ?: explode('@', $email)[0],
-                'email' => $email,
-                'google_id' => $googleId,
-                'password' => Hash::make(\Illuminate\Support\Str::random(32)),
-                'age' => 18,
-                'sex' => 'Other',
-                'course' => 'Not Specified',
-                'year_level' => '1st Year',
-                'is_verified' => true,
-                'is_profile_completed' => false,
-            ]);
-        } else {
-            if ($googleId && !$voter->google_id) {
-                $voter->update(['google_id' => $googleId]);
+            try {
+                $isNewUser = true;
+                $voter = Voter::create([
+                    'name' => $name ?: explode('@', $email)[0],
+                    'email' => $email,
+                    'google_id' => $googleId,
+                    'password' => Hash::make(\Illuminate\Support\Str::random(32)),
+                    'age' => 18,
+                    'sex' => 'Other',
+                    'course' => 'Not Specified',
+                    'year_level' => '1st Year',
+                    'is_verified' => true,
+                    'is_profile_completed' => false,
+                ]);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // If a concurrent request already inserted the record, gracefully retrieve it
+                $voter = Voter::whereRaw('LOWER(TRIM(email)) = ?', [$email])
+                    ->orWhere('google_id', $googleId)
+                    ->first();
+                $isNewUser = false;
+                if (!$voter) {
+                    throw $e;
+                }
             }
+        }
+
+        if ($voter && $googleId && !$voter->google_id) {
+            $voter->update(['google_id' => $googleId]);
         }
 
         $voter->load(['facialProfile', 'organization']);
@@ -289,6 +303,7 @@ class AuthController extends Controller
                     'code' => $voter->organization->code,
                 ] : null,
                 'google_id' => $voter->google_id,
+                'student_id' => $voter->student_id,
                 'age' => $voter->age,
                 'sex' => $voter->sex,
                 'course' => $voter->course,
@@ -309,9 +324,10 @@ class AuthController extends Controller
         $validator = Validator::make($request->all(), [
             'password' => 'nullable|string|min:6',
             'name' => 'required|string|max:255',
-            'age' => 'required|integer|min:15|max:100',
-            'sex' => 'required|string|in:Male,Female,Other',
-            'course' => 'required|string|max:255',
+            'student_id' => 'nullable|string|max:50',
+            'age' => 'nullable|integer|min:15|max:100',
+            'sex' => 'nullable|string|in:Male,Female,Other',
+            'course' => 'nullable|string|max:255',
             'year_level' => 'required|string|max:50',
             'organization_id' => 'required|exists:organizations,id',
         ]);
@@ -322,9 +338,10 @@ class AuthController extends Controller
 
         $profileData = [
             'name' => $request->name,
-            'age' => $request->age,
-            'sex' => $request->sex,
-            'course' => $request->course,
+            'student_id' => $request->filled('student_id') ? trim($request->student_id) : $voter->student_id,
+            'age' => $request->filled('age') ? (int)$request->age : $voter->age,
+            'sex' => $request->filled('sex') ? $request->sex : $voter->sex,
+            'course' => $request->filled('course') ? trim($request->course) : ($voter->course ?: 'Not Specified'),
             'year_level' => $request->year_level,
             'organization_id' => $request->organization_id,
             'is_profile_completed' => true,
@@ -365,6 +382,7 @@ class AuthController extends Controller
                     'code' => $voter->organization->code,
                 ] : null,
                 'google_id' => $voter->google_id,
+                'student_id' => $voter->student_id,
                 'age' => $voter->age,
                 'sex' => $voter->sex,
                 'course' => $voter->course,
@@ -383,18 +401,20 @@ class AuthController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
-            'age' => 'sometimes|required|integer|min:15|max:100',
-            'sex' => 'sometimes|required|string|in:Male,Female,Other',
-            'course' => 'sometimes|required|string|max:255',
+            'student_id' => 'sometimes|nullable|string|max:50',
+            'age' => 'sometimes|nullable|integer|min:15|max:100',
+            'sex' => 'sometimes|nullable|string|in:Male,Female,Other',
+            'course' => 'sometimes|nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['error' => $validator->errors()->first()], 422);
         }
 
-        // Only allow editing name, age, sex, and course
+        // Only allow editing name, student_id, age, sex, and course
         $allowed = [];
         if ($request->has('name')) $allowed['name'] = $request->name;
+        if ($request->has('student_id')) $allowed['student_id'] = $request->student_id;
         if ($request->has('age')) $allowed['age'] = (int)$request->age;
         if ($request->has('sex')) $allowed['sex'] = $request->sex;
         if ($request->has('course')) $allowed['course'] = $request->course;
@@ -428,6 +448,7 @@ class AuthController extends Controller
                     'code' => $voter->organization->code,
                 ] : null,
                 'google_id' => $voter->google_id,
+                'student_id' => $voter->student_id,
                 'age' => $voter->age,
                 'sex' => $voter->sex,
                 'course' => $voter->course,

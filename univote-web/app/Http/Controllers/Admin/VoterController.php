@@ -46,22 +46,29 @@ class VoterController extends Controller
             'organization_id' => 'nullable|exists:organizations,id',
         ]);
 
-        $sex = null;
-        if (! empty($validated['sex'])) {
-            $normalizedSex = strtolower(trim($validated['sex']));
-            if (in_array($normalizedSex, ['male', 'female', 'other'])) {
-                $sex = ucfirst($normalizedSex);
+        $updateData = [
+            'name' => $validated['name'],
+            'course' => $validated['course'] ?? null,
+            'organization_id' => $validated['organization_id'] ?? null,
+        ];
+
+        if (array_key_exists('age', $validated)) {
+            $updateData['age'] = $validated['age'];
+        }
+
+        if (array_key_exists('sex', $validated)) {
+            $sex = null;
+            if (! empty($validated['sex'])) {
+                $normalizedSex = strtolower(trim($validated['sex']));
+                if (in_array($normalizedSex, ['male', 'female', 'other'])) {
+                    $sex = ucfirst($normalizedSex);
+                }
             }
+            $updateData['sex'] = $sex;
         }
 
         // Strictly update only safe profile attributes without touching auth/login data or voting history
-        $voter->update([
-            'name' => $validated['name'],
-            'age' => $validated['age'] ?? null,
-            'sex' => $sex,
-            'course' => $validated['course'] ?? null,
-            'organization_id' => $validated['organization_id'] ?? null,
-        ]);
+        $voter->update($updateData);
 
         $updatedVoter = $voter->fresh(['organization']);
         $updatedVoter->loadCount('votes');

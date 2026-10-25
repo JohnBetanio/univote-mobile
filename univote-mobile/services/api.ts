@@ -59,6 +59,7 @@ interface Organization {
 
 interface User {
   id: string;
+  student_id?: string | null;
   name: string;
   email: string;
   role: "student" | "admin";
@@ -206,7 +207,7 @@ class ApiService {
     };
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 75000); // 75 second timeout to tolerate Render free-tier cold starts
 
     try {
       console.log(`[API] ${options.method || "GET"} ${url} (attempt ${retryCount + 1}/${maxRetries + 1})`);
@@ -262,13 +263,13 @@ class ApiService {
       const errorDetails = error instanceof Error ? error.message : String(error);
 
       if (error instanceof Error && error.name === 'AbortError') {
-        console.error("[API Timeout]", `Request to ${url} timed out after 30s`);
+        console.error("[API Timeout]", `Request to ${url} timed out after 75s`);
         if (canRetry && retryCount < maxRetries) {
           console.log(`[API Retry] Retrying request... (${retryCount + 1}/${maxRetries})`);
           await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
           return this.request<T>(endpoint, options, retryCount + 1);
         }
-        return { error: 'Request timed out. Please ensure the backend API is running and check your network connection.' };
+        return { error: 'Request timed out. The server may be waking up from sleep. Please try again in a few seconds.' };
       }
 
       console.error("[API Network Error]", {
@@ -292,15 +293,15 @@ class ApiService {
   }
 
   // Auth endpoints
-  async register(data: { fullName: string; email: string; password: string; age: number; sex: string; course: string; yearLevel: string; organizationId?: number }) {
+  async register(data: { fullName: string; email: string; password: string; age?: number; sex?: string; course: string; yearLevel: string; organizationId?: number }) {
     return this.request<{ user: User; token: string }>("/auth/register", {
       method: "POST",
       body: JSON.stringify({
         name: data.fullName,
         email: data.email,
         password: data.password,
-        age: data.age,
-        sex: data.sex,
+        ...(data.age !== undefined ? { age: data.age } : {}),
+        ...(data.sex ? { sex: data.sex } : {}),
         course: data.course,
         year_level: data.yearLevel,
         organization_id: data.organizationId,
@@ -331,14 +332,24 @@ class ApiService {
     });
   }
 
-  async setupProfile(data: { password?: string; fullName: string; age: number; sex: string; course: string; yearLevel: string; organizationId: number }) {
+  async setupProfile(data: {
+    password?: string;
+    fullName: string;
+    studentId?: string;
+    age?: number;
+    sex?: string;
+    course?: string;
+    yearLevel: string;
+    organizationId: number;
+  }) {
     return this.request<{ user: User; message: string }>("/auth/setup-profile", {
       method: "POST",
       body: JSON.stringify({
         ...(data.password ? { password: data.password } : {}),
         name: data.fullName,
-        age: data.age,
-        sex: data.sex,
+        student_id: data.studentId,
+        ...(data.age !== undefined ? { age: data.age } : {}),
+        ...(data.sex ? { sex: data.sex } : {}),
         course: data.course,
         year_level: data.yearLevel,
         organization_id: data.organizationId,
@@ -346,7 +357,7 @@ class ApiService {
     });
   }
 
-  async updateProfile(data: { name?: string; age?: number; sex?: string; course?: string }) {
+  async updateProfile(data: { name?: string; student_id?: string; age?: number; sex?: string; course?: string }) {
     return this.request<{ user: User; message: string }>("/auth/update-profile", {
       method: "PUT",
       body: JSON.stringify(data),

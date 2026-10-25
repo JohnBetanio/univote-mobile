@@ -60,9 +60,6 @@ test('admin dashboard returns organization voter statistics with participation a
                 'voted',
                 'not_voted',
                 'participation_percentage',
-                'male_voters',
-                'female_voters',
-                'other_voters',
             ],
         ],
     ]);
@@ -70,8 +67,6 @@ test('admin dashboard returns organization voter statistics with participation a
     $orgStats = collect($response->json('organization_stats'))->firstWhere('code', 'TEST_ORG');
     expect($orgStats)->not->toBeNull();
     expect($orgStats['total_voters'])->toBeGreaterThanOrEqual(2);
-    expect($orgStats['male_voters'])->toBeGreaterThanOrEqual(1);
-    expect($orgStats['female_voters'])->toBeGreaterThanOrEqual(1);
 });
 
 test('admin voters index returns voting status and supports organization filtering', function () {

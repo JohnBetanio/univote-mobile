@@ -84,8 +84,6 @@ export default function VoterProfileScreen() {
   // Edit Profile modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editName, setEditName] = useState('');
-  const [editAge, setEditAge] = useState('');
-  const [editSex, setEditSex] = useState('Male');
   const [editCourse, setEditCourse] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
@@ -94,8 +92,7 @@ export default function VoterProfileScreen() {
   const email = user?.email || '—';
   const course = user?.course || '—';
   const yearLevel = user?.year_level || '—';
-  const age = user?.age ? String(user.age) : '—';
-  const sex = user?.sex || '—';
+  const studentId = user?.student_id || '—';
   const joinedDate = formatJoinDate(user?.created_at);
 
   // Compute initials from name
@@ -163,8 +160,6 @@ export default function VoterProfileScreen() {
 
   const handleOpenEdit = () => {
     setEditName(user?.name || '');
-    setEditAge(user?.age ? String(user.age) : '');
-    setEditSex(user?.sex || 'Male');
     setEditCourse(user?.course || '');
     setEditError('');
     setEditModalVisible(true);
@@ -173,18 +168,9 @@ export default function VoterProfileScreen() {
   const handleSaveProfile = async () => {
     const trimmedName = editName.trim();
     const trimmedCourse = editCourse.trim();
-    const parsedAge = parseInt(editAge, 10);
 
     if (!trimmedName) {
       setEditError('Please enter your full name');
-      return;
-    }
-    if (isNaN(parsedAge) || parsedAge < 15 || parsedAge > 100) {
-      setEditError('Please enter a valid age between 15 and 100');
-      return;
-    }
-    if (!editSex) {
-      setEditError('Please select your sex');
       return;
     }
     if (!trimmedCourse) {
@@ -197,8 +183,6 @@ export default function VoterProfileScreen() {
 
     const res = await updateProfile({
       name: trimmedName,
-      age: parsedAge,
-      sex: editSex,
       course: trimmedCourse,
     });
 
@@ -303,15 +287,15 @@ export default function VoterProfileScreen() {
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Ionicons name="person-outline" size={20} color={Colors.primary} style={{ marginBottom: 4 }} />
-          <Text style={styles.statValue}>{age}</Text>
-          <Text style={styles.statLabel}>Age</Text>
+          <Ionicons name="card-outline" size={20} color={Colors.primary} style={{ marginBottom: 4 }} />
+          <Text style={styles.statValue} numberOfLines={1}>{studentId}</Text>
+          <Text style={styles.statLabel}>Student ID</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Ionicons name="male-female-outline" size={20} color={Colors.primary} style={{ marginBottom: 4 }} />
-          <Text style={styles.statValue}>{sex !== '—' ? sex : '—'}</Text>
-          <Text style={styles.statLabel}>Sex</Text>
+          <Ionicons name={user?.is_profile_completed ? "shield-checkmark-outline" : "hourglass-outline"} size={20} color={user?.is_profile_completed ? Colors.success : Colors.primary} style={{ marginBottom: 4 }} />
+          <Text style={styles.statValue}>{user?.is_profile_completed ? 'Verified' : 'Pending'}</Text>
+          <Text style={styles.statLabel}>Status</Text>
         </View>
       </View>
 
@@ -514,59 +498,6 @@ export default function VoterProfileScreen() {
                   editable={!editSaving}
                 />
                 <Text style={styles.inputHelp}>Format: Dela Cruz, Juan J.</Text>
-              </View>
-
-              {/* Age */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Age *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={editAge}
-                  onChangeText={setEditAge}
-                  placeholder="e.g. 20"
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="numeric"
-                  maxLength={3}
-                  editable={!editSaving}
-                />
-              </View>
-
-              {/* Sex */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Sex *</Text>
-                <View style={styles.sexOptionsRow}>
-                  {['Male', 'Female', 'Other'].map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[
-                        styles.sexOptionBtn,
-                        editSex === option && styles.sexOptionBtnActive,
-                      ]}
-                      onPress={() => setEditSex(option)}
-                      disabled={editSaving}
-                    >
-                      <Ionicons
-                        name={
-                          option === 'Male'
-                            ? 'male'
-                            : option === 'Female'
-                            ? 'female'
-                            : 'person'
-                        }
-                        size={16}
-                        color={editSex === option ? '#fff' : Colors.text}
-                      />
-                      <Text
-                        style={[
-                          styles.sexOptionText,
-                          editSex === option && styles.sexOptionTextActive,
-                        ]}
-                      >
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               </View>
 
               {/* Course */}

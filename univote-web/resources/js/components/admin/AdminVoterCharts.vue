@@ -9,9 +9,9 @@
                         Live Dynamic Data
                     </span>
                 </div>
-                <h3 class="charts-title">Voter Participation &amp; Demographic Visualizer</h3>
+                <h3 class="charts-title">Voter Participation Visualizer</h3>
                 <p class="charts-subtitle">
-                    Dynamically inspect voter participation and sex distribution across organizations with real-time charts.
+                    Dynamically inspect voter participation and turnout across organizations with real-time charts.
                 </p>
             </div>
 
@@ -39,15 +39,6 @@
                     </button>
                 </div>
 
-                <!-- Metric Mode Selector -->
-                <div class="metric-filter">
-                    <label for="metricModeSelect" class="filter-label">Metric:</label>
-                    <select id="metricModeSelect" v-model="metricMode" class="form-select">
-                        <option value="participation">Participation (Voted / Not Voted)</option>
-                        <option value="demographics">Sex Breakdown (Male / Female / Other)</option>
-                        <option value="both">All Metrics (Participation &amp; Sex)</option>
-                    </select>
-                </div>
 
                 <!-- Universal Org Filter (Functional across Bar, Stacked, Donut, Pie, Line) -->
                 <div class="org-filter">
@@ -110,10 +101,7 @@
                 <span class="chip-label">Pending Votes:</span>
                 <strong class="chip-val">{{ summaryMetrics.notVoted }}</strong>
             </div>
-            <div class="chip-item chip-subtle" v-if="summaryMetrics.male || summaryMetrics.female">
-                <span class="chip-label">Sex:</span>
-                <strong class="chip-val">M: {{ summaryMetrics.male }} · F: {{ summaryMetrics.female }} · O: {{ summaryMetrics.other }}</strong>
-            </div>
+
         </div>
 
         <!-- Dynamic Chart Stage -->
@@ -357,123 +345,9 @@
                 </svg>
             </div>
 
-            <!-- 3. DOUGHNUT / PIE CHART (WITH DUAL COORDINATED DONUTS ON 'BOTH' METRICS) -->
+            <!-- 3. DOUGHNUT / PIE CHART -->
             <div v-else-if="chartType === 'doughnut' || chartType === 'pie'" class="circular-chart-layout">
-                <!-- Dual Donuts View when metricMode === 'both' -->
-                <div v-if="metricMode === 'both'" class="dual-circular-container">
-                    <!-- Left: Participation Donut/Pie -->
-                    <div class="dual-circular-card">
-                        <h4 class="dual-card-title">Participation Status</h4>
-                        <p class="dual-card-sub">Turnout distribution for {{ currentFocusName }}</p>
-                        <div class="donut-svg-wrap">
-                            <svg class="circular-svg" viewBox="-160 -160 320 320">
-                                <g v-if="participationSlices.length > 0">
-                                    <path
-                                        v-for="(slice, idx) in participationSlices"
-                                        :key="slice.key"
-                                        :d="slice.pathD"
-                                        :fill="slice.color"
-                                        class="pie-slice"
-                                        :class="{ 'slice-exploded': hoveredSlice === 'p-' + slice.key }"
-                                        :style="{
-                                            transform: hoveredSlice === 'p-' + slice.key ? `translate(${slice.explodeDx}px, ${slice.explodeDy}px)` : 'translate(0,0)',
-                                            animationDelay: `${idx * 60}ms`,
-                                        }"
-                                        @mouseenter="hoveredSlice = 'p-' + slice.key; setHoverTooltip($event, currentFocusName, slice.label, slice.value, slice.percentage)"
-                                        @mousemove="moveTooltip($event)"
-                                        @mouseleave="hoveredSlice = null; clearTooltip()"
-                                    />
-                                    <text
-                                        v-for="slice in participationSlices.filter(s => s.percentage >= 10 && !s.isFullCircle)"
-                                        :key="'lbl-p-' + slice.key"
-                                        :x="slice.labelX"
-                                        :y="slice.labelY"
-                                        text-anchor="middle"
-                                        class="slice-percent-label"
-                                    >
-                                        {{ slice.percentage }}%
-                                    </text>
-                                </g>
-                                <g v-else>
-                                    <circle cx="0" cy="0" r="130" fill="#f8faf8" stroke="#dce5de" stroke-dasharray="4,4" />
-                                    <text y="4" text-anchor="middle" class="empty-donut-txt">No Data</text>
-                                </g>
-
-                                <!-- Doughnut Center Text -->
-                                <g v-if="chartType === 'doughnut'" class="doughnut-center-info">
-                                    <circle cx="0" cy="0" r="66" fill="#ffffff" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))" />
-                                    <text y="-6" text-anchor="middle" class="donut-center-val">{{ summaryMetrics.turnoutPct }}%</text>
-                                    <text y="14" text-anchor="middle" class="donut-center-lbl">Turnout</text>
-                                </g>
-                            </svg>
-                        </div>
-                        <div class="mini-slices-list">
-                            <div v-for="slice in participationSlices" :key="'item-p-' + slice.key" class="mini-slice-row">
-                                <span class="slice-dot" :style="{ backgroundColor: slice.color }"></span>
-                                <span class="slice-name">{{ slice.label }}</span>
-                                <strong class="slice-val">{{ slice.value }} ({{ slice.percentage }}%)</strong>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Right: Demographics Donut/Pie -->
-                    <div class="dual-circular-card">
-                        <h4 class="dual-card-title">Demographics (Sex)</h4>
-                        <p class="dual-card-sub">Voter composition for {{ currentFocusName }}</p>
-                        <div class="donut-svg-wrap">
-                            <svg class="circular-svg" viewBox="-160 -160 320 320">
-                                <g v-if="demographicsSlices.length > 0">
-                                    <path
-                                        v-for="(slice, idx) in demographicsSlices"
-                                        :key="slice.key"
-                                        :d="slice.pathD"
-                                        :fill="slice.color"
-                                        class="pie-slice"
-                                        :class="{ 'slice-exploded': hoveredSlice === 'd-' + slice.key }"
-                                        :style="{
-                                            transform: hoveredSlice === 'd-' + slice.key ? `translate(${slice.explodeDx}px, ${slice.explodeDy}px)` : 'translate(0,0)',
-                                            animationDelay: `${idx * 60}ms`,
-                                        }"
-                                        @mouseenter="hoveredSlice = 'd-' + slice.key; setHoverTooltip($event, currentFocusName, slice.label, slice.value, slice.percentage)"
-                                        @mousemove="moveTooltip($event)"
-                                        @mouseleave="hoveredSlice = null; clearTooltip()"
-                                    />
-                                    <text
-                                        v-for="slice in demographicsSlices.filter(s => s.percentage >= 10 && !s.isFullCircle)"
-                                        :key="'lbl-d-' + slice.key"
-                                        :x="slice.labelX"
-                                        :y="slice.labelY"
-                                        text-anchor="middle"
-                                        class="slice-percent-label"
-                                    >
-                                        {{ slice.percentage }}%
-                                    </text>
-                                </g>
-                                <g v-else>
-                                    <circle cx="0" cy="0" r="130" fill="#f8faf8" stroke="#dce5de" stroke-dasharray="4,4" />
-                                    <text y="4" text-anchor="middle" class="empty-donut-txt">No Data</text>
-                                </g>
-
-                                <!-- Doughnut Center Text -->
-                                <g v-if="chartType === 'doughnut'" class="doughnut-center-info">
-                                    <circle cx="0" cy="0" r="66" fill="#ffffff" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))" />
-                                    <text y="-6" text-anchor="middle" class="donut-center-val">{{ summaryMetrics.totalVoters }}</text>
-                                    <text y="14" text-anchor="middle" class="donut-center-lbl">Total Voters</text>
-                                </g>
-                            </svg>
-                        </div>
-                        <div class="mini-slices-list">
-                            <div v-for="slice in demographicsSlices" :key="'item-d-' + slice.key" class="mini-slice-row">
-                                <span class="slice-dot" :style="{ backgroundColor: slice.color }"></span>
-                                <span class="slice-name">{{ slice.label }}</span>
-                                <strong class="slice-val">{{ slice.value }} ({{ slice.percentage }}%)</strong>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Single Focused Donut/Pie View (Participation or Demographics) -->
-                <div v-else class="single-circular-container">
+                <div class="single-circular-container">
                     <div class="pie-svg-container">
                         <svg class="circular-svg" viewBox="-160 -160 320 320">
                             <defs>
@@ -774,9 +648,6 @@ export default {
                 total_voters:  { key: "total_voters",  label: "Total Voters",  color: "#146c3a" },
                 voted:         { key: "voted",         label: "Voted",         color: "#10b981" },
                 not_voted:     { key: "not_voted",     label: "Not Voted",     color: "#f59e0b" },
-                male_voters:   { key: "male_voters",   label: "Male Voters",   color: "#0E5A30" },
-                female_voters: { key: "female_voters", label: "Female Voters", color: "#2E8B57" },
-                other_voters:  { key: "other_voters",  label: "Other Voters",  color: "#7DB891" },
             },
             chartTypeOptions: [
                 {
@@ -827,13 +698,7 @@ export default {
             return filtered.length ? filtered : this.validOrganizations;
         },
         allSeriesKeys() {
-            if (this.metricMode === "participation") {
-                return ["voted", "not_voted", "total_voters"];
-            }
-            if (this.metricMode === "demographics") {
-                return ["male_voters", "female_voters", "other_voters"];
-            }
-            return ["voted", "not_voted", "male_voters", "female_voters", "other_voters"];
+            return ["voted", "not_voted", "total_voters"];
         },
         activeSeriesKeys() {
             return this.allSeriesKeys.filter((k) => !this.hiddenSeries.has(k));
@@ -1083,9 +948,6 @@ export default {
                 voted,
                 notVoted,
                 turnoutPct: turnout,
-                male: d.male_voters || 0,
-                female: d.female_voters || 0,
-                other: d.other_voters || 0,
             };
         },
         // Slices for Participation (Voted vs Not Voted)
@@ -1097,26 +959,12 @@ export default {
             ].filter((s) => !this.hiddenSeries.has(s.key));
             return this.buildSvgSlices(raw);
         },
-        // Slices for Demographics (Male vs Female vs Other)
-        demographicsSlices() {
-            const data = this.focusedOrgData;
-            const raw = [
-                { key: "male_voters", label: "Male Voters", val: data.male_voters || 0, color: this.palette.male_voters.color },
-                { key: "female_voters", label: "Female Voters", val: data.female_voters || 0, color: this.palette.female_voters.color },
-                { key: "other_voters", label: "Other Voters", val: data.other_voters || 0, color: this.palette.other_voters.color },
-            ].filter((s) => !this.hiddenSeries.has(s.key));
-            return this.buildSvgSlices(raw);
-        },
-        // Single mode slices when metricMode is 'participation' or 'demographics'
+        // Single mode slices for participation
         singleModeSlices() {
-            return this.metricMode === "demographics" ? this.demographicsSlices : this.participationSlices;
+            return this.participationSlices;
         },
     },
     watch: {
-        metricMode() {
-            this.hiddenSeries.clear();
-            this.hiddenSeries = new Set();
-        },
         chartType() {
             this.hoveredSlice = null;
         },
