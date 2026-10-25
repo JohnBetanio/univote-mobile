@@ -214,29 +214,33 @@ class ApiService {
 
       const response = await fetch(url, { ...options, headers, signal: controller.signal });
 
-      let data;
+      let data: any;
       try {
         data = await response.json();
       } catch {
-        data = { message: response.statusText };
+        data = { message: response.statusText || `HTTP ${response.status}` };
       }
 
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const rawError = data?.error?.message || data?.error || data?.message;
-        const errorMsg = typeof rawError === 'string'
-          ? rawError
-          : rawError
-            ? Object.values(rawError).flat(Infinity).join(', ')
-            : `Error ${response.status}`;
+        const rawError =
+          data?.error?.message ||
+          data?.error ||
+          (typeof data?.message === 'string' && data.message.trim() ? data.message : undefined);
+        const errorMsg =
+          typeof rawError === 'string' && rawError.trim()
+            ? rawError
+            : rawError && typeof rawError === 'object'
+              ? Object.values(rawError).flat(Infinity).join(', ')
+              : `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
         // Use warn for expected auth/validation responses to avoid intrusive red popups
         if (response.status === 401 || response.status === 422 || endpoint.startsWith('/facial/')) {
           if (endpoint !== "/auth/logout" && endpoint !== "/user") {
             console.warn(`[API ${response.status}] ${endpoint} - ${errorMsg}`);
           }
         } else {
-          console.error(`[API Error] ${errorMsg}`, data);
+          console.error(`[API Error] ${endpoint} (${response.status}) - ${errorMsg}`, data);
         }
         return {
           data: data as T,

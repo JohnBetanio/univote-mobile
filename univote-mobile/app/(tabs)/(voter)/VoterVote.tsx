@@ -197,7 +197,7 @@ export default function VoterVoteScreen() {
     if (!selectedElection) return;
 
     const positions = selectedElection.candidates
-      ? [...new Set(selectedElection.candidates.map((c) => c.position || 'Candidate'))]
+      ? Array.from(new Set(selectedElection.candidates.map((c) => c.position || 'Candidate')))
       : [];
 
     const missing = positions.filter((p) => !selections[p]);
@@ -305,7 +305,7 @@ export default function VoterVoteScreen() {
   const ballotGroups = useMemo(() => {
     if (!selectedElection) return [];
     const candidates = selectedElection.candidates || [];
-    const positions = [...new Set(candidates.map((c) => c.position || 'Candidate'))];
+    const positions = Array.from(new Set(candidates.map((c) => c.position || 'Candidate')));
     return positions.map((pos) => ({
       position: pos,
       candidates: candidates.filter((c) => (c.position || 'Candidate') === pos),

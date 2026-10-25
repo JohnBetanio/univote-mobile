@@ -50,6 +50,15 @@
         {
           "cameraPermission": "Allow Univote to access your camera for facial identity verification."
         }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "position": "relative",
+          "hidden": false,
+          "backgroundColor": "#146C3A",
+          "style": "light"
+        }
       ]
     ],
     "experiments": {
