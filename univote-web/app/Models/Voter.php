@@ -19,6 +19,7 @@ class Voter extends Authenticatable
         'campus_email',
         'password',
         'course',
+        'course_id',
         'year_level',
         'organization_id',
         'google_id',
@@ -72,6 +73,11 @@ class Voter extends Authenticatable
     public function organization()
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    public function courseRelation()
+    {
+        return $this->belongsTo(Course::class, 'course_id');
     }
 
     // Check if voter has voted in specific election

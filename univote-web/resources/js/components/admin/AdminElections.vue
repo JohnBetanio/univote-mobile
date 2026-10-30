@@ -898,8 +898,10 @@ export default {
     color: #777;
     line-height: 1.4;
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    /* stylelint-disable-next-line value-no-vendor-prefix */
     -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
 }
 
