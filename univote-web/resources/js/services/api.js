@@ -166,6 +166,10 @@ export const adminAPI = {
     createOrganization: (data) => api.post("/admin/organizations", data),
     updateOrganization: (id, data) => api.put(`/admin/organizations/${id}`, data),
     deleteOrganization: (id) => api.delete(`/admin/organizations/${id}`),
+    // Courses under organization
+    getOrganizationCourses: (orgId) => api.get(`/admin/organizations/${orgId}/courses`),
+    createOrganizationCourse: (orgId, data) => api.post(`/admin/organizations/${orgId}/courses`, data),
+    deleteOrganizationCourse: (orgId, courseId) => api.delete(`/admin/organizations/${orgId}/courses/${courseId}`),
     getResults: (params = {}) => api.get("/admin/results", { params }),
     getResultsForElection: (id) => api.get(`/admin/results/${id}`),
     getAnnouncements: () => api.get("/admin/announcements"),

@@ -41,6 +41,28 @@ class Voter extends Authenticatable
         'password' => 'hashed',
     ];
 
+    protected $appends = [
+        'avatar_url',
+    ];
+
+    /**
+     * Full URL for voter's avatar / profile picture.
+     */
+    public function getAvatarUrlAttribute(): ?string
+    {
+        if (!$this->avatar) {
+            return null;
+        }
+
+        if (str_starts_with($this->avatar, 'http://') || str_starts_with($this->avatar, 'https://') || str_starts_with($this->avatar, 'data:')) {
+            return $this->avatar;
+        }
+
+        return request()->getSchemeAndHttpHost()
+            ? request()->getSchemeAndHttpHost() . '/storage/' . ltrim($this->avatar, '/')
+            : asset('storage/' . ltrim($this->avatar, '/'));
+    }
+
     // Relationship with votes
     public function votes()
     {

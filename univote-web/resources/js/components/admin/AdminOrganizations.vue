@@ -11,7 +11,7 @@
                     </div>
                     <div>
                         <h1 class="page-title">Organizations</h1>
-                        <p class="page-subtitle">Manage voter groups, departments, and organizational units</p>
+                        <p class="page-subtitle">Manage departments, course lists, and organizational units</p>
                     </div>
                 </div>
                 <div class="header-action-group">
@@ -49,15 +49,15 @@
                     <div class="stat-label">Total Voters</div>
                 </div>
             </div>
-            <div class="stat-card stat-avg">
+            <div class="stat-card stat-courses">
                 <div class="stat-icon-wrap">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
                     </svg>
                 </div>
                 <div class="stat-info">
-                    <div class="stat-value">{{ avgVoters }}</div>
-                    <div class="stat-label">Avg per Org</div>
+                    <div class="stat-value">{{ totalCourses }}</div>
+                    <div class="stat-label">Total Courses</div>
                 </div>
             </div>
             <div class="stat-card stat-largest">
@@ -88,24 +88,11 @@
                 <form class="create-form" @submit.prevent="createOrganization">
                     <div class="form-group">
                         <label for="orgName" class="form-label">Organization Name</label>
-                        <input
-                            id="orgName"
-                            v-model="newName"
-                            class="form-input"
-                            placeholder="e.g. College of Computer Studies"
-                            required
-                        />
+                        <input id="orgName" v-model="newName" class="form-input" placeholder="e.g. College of Computer Studies" required />
                     </div>
                     <div class="form-group">
                         <label for="orgCode" class="form-label">Organization Code</label>
-                        <input
-                            id="orgCode"
-                            v-model="newCode"
-                            class="form-input code-input"
-                            placeholder="e.g. CCS"
-                            maxlength="20"
-                            required
-                        />
+                        <input id="orgCode" v-model="newCode" class="form-input code-input" placeholder="e.g. CCS" maxlength="20" required />
                         <span class="form-hint">Unique short code, max 20 characters</span>
                     </div>
                     <div class="form-actions">
@@ -128,12 +115,7 @@
                 <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
                 </svg>
-                <input
-                    v-model="searchQuery"
-                    type="search"
-                    class="search-input"
-                    placeholder="Search organizations by name or code..."
-                />
+                <input v-model="searchQuery" type="search" class="search-input" placeholder="Search organizations by name or code..." />
             </div>
             <div class="filter-sort">
                 <select v-model="sortBy" class="sort-select">
@@ -185,6 +167,7 @@
 
                 <!-- View Mode -->
                 <div v-else class="org-card-view">
+                    <!-- Card Top: Avatar + Info + Actions -->
                     <div class="org-card-top">
                         <div class="org-avatar" :style="getAvatarStyle(organization)">
                             {{ getInitials(organization.code) }}
@@ -193,7 +176,21 @@
                             <h3 class="org-name">{{ organization.name }}</h3>
                             <span class="org-code-badge">{{ organization.code }}</span>
                         </div>
+                        <div class="org-top-actions">
+                            <button class="btn btn-edit" @click="startEditing(organization)" type="button" title="Edit organization">
+                                <svg class="btn-icon-sm" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                </svg>
+                            </button>
+                            <button class="btn btn-delete" @click="removeOrganization(organization)" type="button" title="Delete organization">
+                                <svg class="btn-icon-sm" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                </svg>
+                            </button>
+                        </div>
                     </div>
+
+                    <!-- Stats Row -->
                     <div class="org-card-stats">
                         <div class="org-stat">
                             <svg class="org-stat-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -205,25 +202,76 @@
                         <div class="org-stat-divider"></div>
                         <div class="org-stat">
                             <svg class="org-stat-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
+                            </svg>
+                            <span class="org-stat-value">{{ (organization.courses || []).length }}</span>
+                            <span class="org-stat-label">courses</span>
+                        </div>
+                        <div class="org-stat-divider"></div>
+                        <div class="org-stat">
+                            <svg class="org-stat-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.745 3.745 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
                             </svg>
                             <span class="org-stat-value status-active-text">Active</span>
                         </div>
                     </div>
-                    <div class="org-card-actions">
-                        <button class="btn btn-edit" @click="startEditing(organization)" type="button">
-                            <svg class="btn-icon-sm" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+
+                    <!-- ═══ Courses Section ═══ -->
+                    <div class="courses-section">
+                        <div class="courses-section-header">
+                            <div class="courses-section-title">
+                                <svg class="courses-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
+                                </svg>
+                                <span>Course Lists</span>
+                                <span class="courses-count-badge">{{ (organization.courses || []).length }}</span>
+                            </div>
+                            <button
+                                class="btn-add-course"
+                                type="button"
+                                @click="openAddCourse(organization)"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:14px;height:14px">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                                </svg>
+                                Add Course
+                            </button>
+                        </div>
+
+                        <!-- Course List -->
+                        <div v-if="(organization.courses || []).length > 0" class="course-list">
+                            <div
+                                v-for="course in organization.courses"
+                                :key="course.id"
+                                class="course-item"
+                            >
+                                <div class="course-item-left">
+                                    <span class="course-code-pill">{{ course.code }}</span>
+                                    <div class="course-item-info">
+                                        <span class="course-item-name">{{ course.name }}</span>
+                                        <span class="course-item-voters">{{ course.voters_count || 0 }} voters</span>
+                                    </div>
+                                </div>
+                                <button
+                                    class="btn-delete-course"
+                                    type="button"
+                                    @click="removeCourse(organization, course)"
+                                    title="Delete course"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:15px;height:15px">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div v-else class="courses-empty">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" style="width:32px;height:32px;color:#ccc;margin-bottom:6px">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
                             </svg>
-                            Edit
-                        </button>
-                        <button class="btn btn-delete" @click="removeOrganization(organization)" type="button">
-                            <svg class="btn-icon-sm" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                            </svg>
-                            Delete
-                        </button>
+                            <p>No courses yet. Click <strong>Add Course</strong> to create one.</p>
+                        </div>
                     </div>
+                    <!-- ═══ End Courses Section ═══ -->
                 </div>
             </article>
         </div>
@@ -252,6 +300,65 @@
             <div class="loading-spinner-lg"></div>
             <p class="loading-text">Loading organizations...</p>
         </div>
+
+        <!-- ═══ Add Course Modal ═══ -->
+        <transition name="modal-fade">
+            <div v-if="addCourseModal.show" class="modal-overlay" @click.self="closeAddCourse">
+                <div class="modal-box">
+                    <div class="modal-header">
+                        <div class="modal-header-left">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:22px;height:22px;color:#16a34a">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
+                            </svg>
+                            <div>
+                                <h3 class="modal-title">Add Course</h3>
+                                <p class="modal-subtitle">Adding to: <strong>{{ addCourseModal.org?.name }}</strong></p>
+                            </div>
+                        </div>
+                        <button class="modal-close" type="button" @click="closeAddCourse">✕</button>
+                    </div>
+
+                    <form @submit.prevent="submitAddCourse" class="modal-form">
+                        <div class="modal-form-group">
+                            <label class="modal-label">Course Name <span class="req">*</span></label>
+                            <input
+                                v-model="addCourseModal.name"
+                                class="modal-input"
+                                placeholder="e.g. Bachelor of Science in Information Technology"
+                                required
+                                autofocus
+                            />
+                        </div>
+                        <div class="modal-form-group">
+                            <label class="modal-label">Course Code <span class="req">*</span></label>
+                            <input
+                                v-model="addCourseModal.code"
+                                class="modal-input code-input"
+                                placeholder="e.g. BSIT"
+                                maxlength="20"
+                                required
+                            />
+                            <span class="modal-hint">Unique short code within this organization, max 20 chars</span>
+                        </div>
+                        <div class="modal-form-group">
+                            <label class="modal-label">Description <span class="optional">(optional)</span></label>
+                            <input
+                                v-model="addCourseModal.description"
+                                class="modal-input"
+                                placeholder="Short description of this course"
+                            />
+                        </div>
+                        <div class="modal-actions">
+                            <button type="submit" class="btn btn-modal-submit" :disabled="addCourseModal.loading">
+                                <span v-if="addCourseModal.loading" class="spinner"></span>
+                                {{ addCourseModal.loading ? 'Adding...' : 'Add Course' }}
+                            </button>
+                            <button type="button" class="btn btn-modal-cancel" @click="closeAddCourse">Cancel</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </transition>
     </section>
 </template>
 
@@ -260,7 +367,6 @@ import { adminAPI } from "../../services/api.js";
 import { useNotification } from "../../composables/useNotification.js";
 import { useConfirmDialog } from "../../composables/useConfirmDialog.js";
 
-// Harmonious color palette for org avatars
 const AVATAR_COLORS = [
     { bg: '#e8f5e9', text: '#2e7d32' },
     { bg: '#e3f2fd', text: '#1565c0' },
@@ -294,11 +400,23 @@ export default {
             showCreateForm: false,
             searchQuery: "",
             sortBy: "name",
+            // Add Course Modal state
+            addCourseModal: {
+                show: false,
+                org: null,
+                name: "",
+                code: "",
+                description: "",
+                loading: false,
+            },
         };
     },
     computed: {
         totalVoters() {
             return this.organizations.reduce((sum, o) => sum + (o.voters_count || 0), 0);
+        },
+        totalCourses() {
+            return this.organizations.reduce((sum, o) => sum + ((o.courses || []).length), 0);
         },
         avgVoters() {
             if (!this.organizations.length) return 0;
@@ -310,33 +428,18 @@ export default {
         },
         filteredOrganizations() {
             let list = [...this.organizations];
-
-            // Search filter
             if (this.searchQuery.trim()) {
                 const q = this.searchQuery.trim().toLowerCase();
                 list = list.filter(
-                    o =>
-                        o.name.toLowerCase().includes(q) ||
-                        o.code.toLowerCase().includes(q)
+                    o => o.name.toLowerCase().includes(q) || o.code.toLowerCase().includes(q)
                 );
             }
-
-            // Sort
             switch (this.sortBy) {
-                case "name":
-                    list.sort((a, b) => a.name.localeCompare(b.name));
-                    break;
-                case "code":
-                    list.sort((a, b) => a.code.localeCompare(b.code));
-                    break;
-                case "voters_desc":
-                    list.sort((a, b) => (b.voters_count || 0) - (a.voters_count || 0));
-                    break;
-                case "voters_asc":
-                    list.sort((a, b) => (a.voters_count || 0) - (b.voters_count || 0));
-                    break;
+                case "name":    list.sort((a, b) => a.name.localeCompare(b.name)); break;
+                case "code":    list.sort((a, b) => a.code.localeCompare(b.code)); break;
+                case "voters_desc": list.sort((a, b) => (b.voters_count || 0) - (a.voters_count || 0)); break;
+                case "voters_asc":  list.sort((a, b) => (a.voters_count || 0) - (b.voters_count || 0)); break;
             }
-
             return list;
         },
     },
@@ -350,10 +453,7 @@ export default {
         getAvatarStyle(organization) {
             const idx = organization.id % AVATAR_COLORS.length;
             const color = AVATAR_COLORS[idx];
-            return {
-                background: color.bg,
-                color: color.text,
-            };
+            return { background: color.bg, color: color.text };
         },
         toggleCreateForm() {
             this.showCreateForm = !this.showCreateForm;
@@ -378,7 +478,10 @@ export default {
             this.loading = true;
             try {
                 const response = await adminAPI.createOrganization({ name: this.newName, code: this.newCode });
-                this.organizations.push(response.data.organization);
+                const org = response.data.organization;
+                org.courses = [];
+                org.voters_count = 0;
+                this.organizations.push(org);
                 this.newName = "";
                 this.newCode = "";
                 this.showCreateForm = false;
@@ -412,13 +515,74 @@ export default {
                 { title: "Delete Organization", confirmText: "Delete" }
             );
             if (!confirmed) return;
-
             try {
                 await adminAPI.deleteOrganization(organization.id);
                 this.organizations = this.organizations.filter((item) => item.id !== organization.id);
                 this.showSuccess("Organization deleted successfully!");
             } catch (error) {
                 const errorMessage = error.response?.data?.message || error.message || "Failed to delete organization";
+                this.showError(errorMessage);
+            }
+        },
+
+        // ─── Course Management ───────────────────────────────────────────────
+        openAddCourse(organization) {
+            this.addCourseModal.show = true;
+            this.addCourseModal.org = organization;
+            this.addCourseModal.name = "";
+            this.addCourseModal.code = "";
+            this.addCourseModal.description = "";
+            this.addCourseModal.loading = false;
+        },
+        closeAddCourse() {
+            this.addCourseModal.show = false;
+            this.addCourseModal.org = null;
+        },
+        async submitAddCourse() {
+            if (!this.addCourseModal.name.trim() || !this.addCourseModal.code.trim()) {
+                this.showError("Course name and code are required.");
+                return;
+            }
+            this.addCourseModal.loading = true;
+            try {
+                const orgId = this.addCourseModal.org.id;
+                const response = await adminAPI.createOrganizationCourse(orgId, {
+                    name: this.addCourseModal.name.trim(),
+                    code: this.addCourseModal.code.trim(),
+                    description: this.addCourseModal.description.trim() || null,
+                });
+                // Push course into the local org object
+                const org = this.organizations.find(o => o.id === orgId);
+                if (org) {
+                    if (!org.courses) org.courses = [];
+                    org.courses.push(response.data.course);
+                    org.courses_count = (org.courses_count || 0) + 1;
+                }
+                this.showSuccess(`Course "${response.data.course.code}" added successfully!`);
+                this.closeAddCourse();
+            } catch (error) {
+                const errorMessage = error.response?.data?.message || error.message || "Failed to add course";
+                this.showError(errorMessage);
+            } finally {
+                this.addCourseModal.loading = false;
+            }
+        },
+        async removeCourse(organization, course) {
+            const confirmed = await this.showConfirmDangerous(
+                `Delete course "${course.name} (${course.code})"? This cannot be undone.`,
+                { title: "Delete Course", confirmText: "Delete" }
+            );
+            if (!confirmed) return;
+            try {
+                await adminAPI.deleteOrganizationCourse(organization.id, course.id);
+                const org = this.organizations.find(o => o.id === organization.id);
+                if (org) {
+                    org.courses = org.courses.filter(c => c.id !== course.id);
+                    org.courses_count = Math.max(0, (org.courses_count || 1) - 1);
+                }
+                this.showSuccess(`Course "${course.code}" deleted.`);
+            } catch (error) {
+                const errorMessage = error.response?.data?.message || error.message || "Failed to delete course";
                 this.showError(errorMessage);
             }
         },
@@ -430,9 +594,7 @@ export default {
 /* =========================================================
    Base
    ========================================================= */
-.organizations-page {
-    padding: 0;
-}
+.organizations-page { padding: 0; }
 
 /* =========================================================
    Page Header
@@ -446,7 +608,6 @@ export default {
     position: relative;
     overflow: hidden;
 }
-
 .page-header::before {
     content: '';
     position: absolute;
@@ -455,7 +616,6 @@ export default {
     border-radius: 50%;
     background: rgba(255,255,255,0.07);
 }
-
 .page-header::after {
     content: '';
     position: absolute;
@@ -464,7 +624,6 @@ export default {
     border-radius: 50%;
     background: rgba(255,255,255,0.05);
 }
-
 .header-content {
     display: flex;
     justify-content: space-between;
@@ -473,13 +632,11 @@ export default {
     position: relative;
     z-index: 1;
 }
-
 .header-title-section {
     display: flex;
     align-items: center;
     gap: 18px;
 }
-
 .header-icon-wrap {
     width: 56px; height: 56px;
     background: rgba(255,255,255,0.18);
@@ -489,62 +646,31 @@ export default {
     flex-shrink: 0;
     color: white;
 }
-
-.header-icon-svg {
-    width: 32px;
-    height: 32px;
-}
-
+.header-icon-svg { width: 32px; height: 32px; }
 .page-title {
-    font-size: 28px;
-    font-weight: 800;
-    margin: 0 0 4px;
-    color: #fff;
-    letter-spacing: -0.5px;
+    font-size: 28px; font-weight: 800;
+    margin: 0 0 4px; color: #fff; letter-spacing: -0.5px;
 }
-
-.page-subtitle {
-    font-size: 14px;
-    color: rgba(255,255,255,0.75);
-    margin: 0;
-}
-
+.page-subtitle { font-size: 14px; color: rgba(255,255,255,0.75); margin: 0; }
 .header-action-group {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
-
 .btn-add-org {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(255,255,255,0.15);
-    color: #fff;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,0.15); color: #fff;
     border: 1.5px solid rgba(255,255,255,0.4);
-    border-radius: 12px;
-    padding: 12px 24px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.22s ease;
-    white-space: nowrap;
-    backdrop-filter: blur(4px);
-    font-family: inherit;
+    border-radius: 12px; padding: 12px 24px;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: all 0.22s ease;
+    white-space: nowrap; backdrop-filter: blur(4px); font-family: inherit;
 }
-
 .btn-add-org:hover {
     background: rgba(255,255,255,0.28);
     border-color: rgba(255,255,255,0.7);
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(0,0,0,0.15);
 }
-
-.btn-icon-svg {
-    width: 20px;
-    height: 20px;
-}
+.btn-icon-svg { width: 20px; height: 20px; }
 
 /* =========================================================
    Stats Summary
@@ -555,362 +681,135 @@ export default {
     gap: 16px;
     margin-bottom: 24px;
 }
-
-@media (max-width: 900px) {
-    .stats-summary { grid-template-columns: repeat(2, 1fr); }
-}
-
-@media (max-width: 480px) {
-    .stats-summary { grid-template-columns: 1fr; }
-}
+@media (max-width: 900px) { .stats-summary { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .stats-summary { grid-template-columns: 1fr; } }
 
 .stat-card {
-    background: #fff;
-    border-radius: 14px;
-    padding: 20px 18px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
+    background: #fff; border-radius: 14px; padding: 20px 18px;
+    display: flex; align-items: center; gap: 14px;
     box-shadow: 0 2px 12px rgba(0,0,0,0.06);
     transition: transform 0.2s, box-shadow 0.2s;
     border-bottom: 3px solid transparent;
 }
-
-.stat-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-}
-
-.stat-total { border-bottom-color: #1976d2; }
-.stat-voters { border-bottom-color: #2e7d32; }
-.stat-avg { border-bottom-color: #7b1fa2; }
-.stat-largest { border-bottom-color: #e65100; }
-
-.stat-icon-wrap {
-    width: 42px;
-    height: 42px;
-    flex-shrink: 0;
-    color: #666;
-}
-
-.stat-icon-wrap svg {
-    width: 100%;
-    height: 100%;
-}
-
-.stat-value {
-    font-size: 30px;
-    font-weight: 800;
-    color: #1a2a3a;
-    line-height: 1;
-}
-
-.stat-label {
-    font-size: 12px;
-    color: #888;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: 600;
-    margin-top: 2px;
-}
+.stat-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+.stat-total    { border-bottom-color: #1976d2; }
+.stat-voters   { border-bottom-color: #2e7d32; }
+.stat-courses  { border-bottom-color: #7b1fa2; }
+.stat-largest  { border-bottom-color: #e65100; }
+.stat-icon-wrap { width: 42px; height: 42px; flex-shrink: 0; color: #666; }
+.stat-icon-wrap svg { width: 100%; height: 100%; }
+.stat-value { font-size: 30px; font-weight: 800; color: #1a2a3a; line-height: 1; }
+.stat-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-top: 2px; }
 
 /* =========================================================
    Create Panel
    ========================================================= */
 .create-panel {
-    background: #fff;
-    border: 2px solid #bbf7d0;
-    border-radius: 16px;
-    padding: 28px 32px;
+    background: #fff; border: 2px solid #bbf7d0;
+    border-radius: 16px; padding: 28px 32px;
     margin-bottom: 24px;
     box-shadow: 0 4px 20px rgba(17, 107, 39, 0.08);
 }
-
 .create-panel-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    margin-bottom: 24px;
+    display: flex; align-items: flex-start; gap: 14px; margin-bottom: 24px;
 }
-
-.create-panel-icon {
-    width: 36px;
-    height: 36px;
-    color: #16a34a;
-    flex-shrink: 0;
-    margin-top: 2px;
-}
-
-.create-panel-title {
-    margin: 0 0 4px;
-    font-size: 18px;
-    font-weight: 800;
-    color: #1a2a3a;
-}
-
-.create-panel-desc {
-    margin: 0;
-    font-size: 13.5px;
-    color: #666;
-    line-height: 1.4;
-}
-
+.create-panel-icon { width: 36px; height: 36px; color: #16a34a; flex-shrink: 0; margin-top: 2px; }
+.create-panel-title { margin: 0 0 4px; font-size: 18px; font-weight: 800; color: #1a2a3a; }
+.create-panel-desc { margin: 0; font-size: 13.5px; color: #666; line-height: 1.4; }
 .create-form {
     display: grid;
     grid-template-columns: 1fr auto auto;
     gap: 16px;
     align-items: end;
 }
-
-@media (max-width: 768px) {
-    .create-form { grid-template-columns: 1fr; }
-}
-
-.form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.form-label {
-    font-size: 12px;
-    font-weight: 700;
-    color: #555;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
+@media (max-width: 768px) { .create-form { grid-template-columns: 1fr; } }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
 .form-input {
-    padding: 12px 16px;
-    border: 1.5px solid #e0e0e0;
-    border-radius: 10px;
-    font-size: 14px;
-    color: #333;
-    outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    font-family: inherit;
-    width: 100%;
-    box-sizing: border-box;
+    padding: 12px 16px; border: 1.5px solid #e0e0e0;
+    border-radius: 10px; font-size: 14px; color: #333;
+    outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit; width: 100%; box-sizing: border-box;
 }
-
-.form-input:focus {
-    border-color: #116b27;
-    box-shadow: 0 0 0 3px rgba(17,107,39,0.1);
-}
-
-.code-input {
-    text-transform: uppercase;
-    max-width: 200px;
-    font-weight: 700;
-    letter-spacing: 1px;
-}
-
-.form-hint {
-    font-size: 11px;
-    color: #999;
-}
-
-.form-actions {
-    display: flex;
-    gap: 10px;
-    align-items: flex-end;
-    padding-bottom: 1px;
-}
+.form-input:focus { border-color: #116b27; box-shadow: 0 0 0 3px rgba(17,107,39,0.1); }
+.code-input { text-transform: uppercase; max-width: 200px; font-weight: 700; letter-spacing: 1px; }
+.form-hint { font-size: 11px; color: #999; }
+.form-actions { display: flex; gap: 10px; align-items: flex-end; padding-bottom: 1px; }
 
 /* =========================================================
    Buttons
    ========================================================= */
 .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    border: none;
-    border-radius: 10px;
-    padding: 11px 20px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-family: inherit;
-    white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px;
+    border: none; border-radius: 10px; padding: 11px 20px;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s ease;
+    font-family: inherit; white-space: nowrap;
 }
-
-.btn-create-submit {
-    background: #116b27;
-    color: #fff;
-    padding: 12px 24px;
-}
-
-.btn-create-submit:hover {
-    background: #0b511c;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(17, 107, 39, 0.3);
-}
-
-.btn-create-submit:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.btn-cancel {
-    background: #f1f5f9;
-    color: #64748b;
-}
-
-.btn-cancel:hover {
-    background: #e2e8f0;
-    color: #475569;
-}
-
+.btn-create-submit { background: #116b27; color: #fff; padding: 12px 24px; }
+.btn-create-submit:hover { background: #0b511c; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(17, 107, 39, 0.3); }
+.btn-create-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+.btn-cancel { background: #f1f5f9; color: #64748b; }
+.btn-cancel:hover { background: #e2e8f0; color: #475569; }
 .btn-edit {
-    background: #f0fdf4;
-    color: #16a34a;
-    padding: 8px 16px;
-    font-size: 12.5px;
+    background: #f0fdf4; color: #16a34a;
+    padding: 7px 10px; font-size: 12px;
+    border-radius: 8px;
 }
-
-.btn-edit:hover {
-    background: #dcfce7;
-    color: #15803d;
-    transform: translateY(-1px);
-}
-
+.btn-edit:hover { background: #dcfce7; color: #15803d; }
 .btn-delete {
-    background: #fef2f2;
-    color: #dc2626;
-    padding: 8px 16px;
-    font-size: 12.5px;
+    background: #fef2f2; color: #dc2626;
+    padding: 7px 10px; font-size: 12px;
+    border-radius: 8px;
 }
-
-.btn-delete:hover {
-    background: #fecaca;
-    color: #b91c1c;
-    transform: translateY(-1px);
-}
-
-.btn-save {
-    background: #116b27;
-    color: #fff;
-}
-
-.btn-save:hover {
-    background: #0b511c;
-}
-
-.btn-cancel-edit {
-    background: #f1f5f9;
-    color: #64748b;
-}
-
-.btn-cancel-edit:hover {
-    background: #e2e8f0;
-}
-
+.btn-delete:hover { background: #fecaca; color: #b91c1c; }
+.btn-save { background: #116b27; color: #fff; }
+.btn-save:hover { background: #0b511c; }
+.btn-cancel-edit { background: #f1f5f9; color: #64748b; }
+.btn-cancel-edit:hover { background: #e2e8f0; }
 .btn-empty-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: #116b27;
-    color: #fff;
-    border: none;
-    border-radius: 12px;
-    padding: 14px 28px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.22s ease;
-    font-family: inherit;
-    margin-top: 8px;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #116b27; color: #fff; border: none;
+    border-radius: 12px; padding: 14px 28px;
+    font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: all 0.22s ease;
+    font-family: inherit; margin-top: 8px;
 }
-
-.btn-empty-action:hover {
-    background: #0b511c;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(17, 107, 39, 0.25);
-}
-
-.btn-icon-sm {
-    width: 16px;
-    height: 16px;
-}
+.btn-empty-action:hover { background: #0b511c; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(17, 107, 39, 0.25); }
+.btn-icon-sm { width: 16px; height: 16px; }
 
 /* =========================================================
    Filter Bar
    ========================================================= */
 .filter-bar {
-    background: #fff;
-    border-radius: 14px;
-    padding: 16px 20px;
+    background: #fff; border-radius: 14px; padding: 16px 20px;
     margin-bottom: 24px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-    flex-wrap: wrap;
+    display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06); flex-wrap: wrap;
 }
-
-.filter-search {
-    position: relative;
-    flex: 1;
-    min-width: 200px;
-}
-
+.filter-search { position: relative; flex: 1; min-width: 200px; }
 .search-icon {
-    position: absolute;
-    left: 12px; top: 50%;
-    transform: translateY(-50%);
-    width: 18px;
-    height: 18px;
-    color: #999;
+    position: absolute; left: 12px; top: 50%;
+    transform: translateY(-50%); width: 18px; height: 18px; color: #999;
 }
-
 .search-input {
-    width: 100%;
-    padding: 10px 14px 10px 38px;
-    border: 1.5px solid #e0e0e0;
-    border-radius: 10px;
-    font-size: 14px;
-    color: #333;
-    outline: none;
-    transition: border-color 0.2s;
-    box-sizing: border-box;
-    font-family: inherit;
+    width: 100%; padding: 10px 14px 10px 38px;
+    border: 1.5px solid #e0e0e0; border-radius: 10px;
+    font-size: 14px; color: #333; outline: none;
+    transition: border-color 0.2s; box-sizing: border-box; font-family: inherit;
 }
-
-.search-input:focus {
-    border-color: #116b27;
-    box-shadow: 0 0 0 3px rgba(17,107,39,0.1);
-}
-
+.search-input:focus { border-color: #116b27; box-shadow: 0 0 0 3px rgba(17,107,39,0.1); }
 .sort-select {
-    padding: 10px 14px;
-    border: 1.5px solid #e0e0e0;
-    border-radius: 10px;
-    font-size: 13px;
-    color: #444;
-    background: #f8f9fa;
-    outline: none;
-    cursor: pointer;
-    transition: border-color 0.2s;
-    min-width: 160px;
-    font-family: inherit;
+    padding: 10px 14px; border: 1.5px solid #e0e0e0;
+    border-radius: 10px; font-size: 13px; color: #444;
+    background: #f8f9fa; outline: none; cursor: pointer;
+    transition: border-color 0.2s; min-width: 160px; font-family: inherit;
 }
-
-.sort-select:focus {
-    border-color: #116b27;
-    box-shadow: 0 0 0 3px rgba(17,107,39,0.1);
-}
-
+.sort-select:focus { border-color: #116b27; box-shadow: 0 0 0 3px rgba(17,107,39,0.1); }
 .results-badge {
-    display: inline-block;
-    background: #f0fdf4;
-    color: #16a34a;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 6px 14px;
-    border-radius: 20px;
-    white-space: nowrap;
+    display: inline-block; background: #f0fdf4; color: #16a34a;
+    font-size: 12px; font-weight: 700; padding: 6px 14px;
+    border-radius: 20px; white-space: nowrap;
 }
 
 /* =========================================================
@@ -918,295 +817,251 @@ export default {
    ========================================================= */
 .org-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
     gap: 20px;
     margin-bottom: 40px;
 }
-
-@media (max-width: 768px) {
-    .org-grid { grid-template-columns: 1fr; }
-}
+@media (max-width: 768px) { .org-grid { grid-template-columns: 1fr; } }
 
 .org-card {
-    background: #fff;
-    border-radius: 16px;
+    background: #fff; border-radius: 16px;
     box-shadow: 0 2px 14px rgba(0,0,0,0.06);
     overflow: hidden;
     transition: transform 0.25s, box-shadow 0.25s;
     border: 1px solid #f0f0f0;
 }
-
-.org-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 12px 32px rgba(0,0,0,0.1);
-}
-
-.org-card-editing {
-    border: 2px solid #16a34a;
-    box-shadow: 0 4px 20px rgba(22, 163, 74, 0.15);
-}
-
-.org-card-editing:hover {
-    transform: none;
-}
+.org-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.1); }
+.org-card-editing { border: 2px solid #16a34a; box-shadow: 0 4px 20px rgba(22, 163, 74, 0.15); }
+.org-card-editing:hover { transform: none; }
 
 /* Card View Mode */
-.org-card-view {
-    display: flex;
-    flex-direction: column;
-}
+.org-card-view { display: flex; flex-direction: column; }
 
 .org-card-top {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 22px 22px 16px;
+    display: flex; align-items: center; gap: 14px;
+    padding: 18px 18px 14px;
 }
-
 .org-avatar {
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: 0.5px;
-    flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; letter-spacing: 0.5px;
+    flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
-
-.org-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.org-name {
-    margin: 0 0 6px;
-    font-size: 16px;
-    font-weight: 800;
-    color: #1a2a3a;
-    line-height: 1.3;
-    word-break: break-word;
-}
-
+.org-info { flex: 1; min-width: 0; }
+.org-name { margin: 0 0 5px; font-size: 15px; font-weight: 800; color: #1a2a3a; word-break: break-word; }
 .org-code-badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 20px;
-    background: #f0fdf4;
-    color: #16a34a;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
+    display: inline-block; padding: 2px 9px; border-radius: 20px;
+    background: #f0fdf4; color: #16a34a;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase;
 }
+.org-top-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
-/* Card Stats Row */
+/* Stats Row */
 .org-card-stats {
-    display: flex;
-    align-items: center;
-    padding: 14px 22px;
+    display: flex; align-items: center;
+    padding: 10px 18px;
     border-top: 1px solid #f3f3f3;
     border-bottom: 1px solid #f3f3f3;
     gap: 0;
 }
-
-.org-stat {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    justify-content: center;
-}
-
-.org-stat-icon {
-    width: 18px;
-    height: 18px;
-    color: #999;
-    flex-shrink: 0;
-}
-
-.org-stat-value {
-    font-size: 16px;
-    font-weight: 800;
-    color: #1a2a3a;
-}
-
-.status-active-text {
-    color: #16a34a;
-    font-size: 13px;
-}
-
-.org-stat-label {
-    font-size: 12px;
-    color: #999;
-    font-weight: 600;
-}
-
-.org-stat-divider {
-    width: 1px;
-    height: 28px;
-    background: #eee;
-    margin: 0 4px;
-}
-
-/* Card Actions */
-.org-card-actions {
-    display: flex;
-    gap: 8px;
-    padding: 14px 22px;
-    justify-content: flex-end;
-}
+.org-stat { flex: 1; display: flex; align-items: center; gap: 6px; justify-content: center; }
+.org-stat-icon { width: 16px; height: 16px; color: #999; flex-shrink: 0; }
+.org-stat-value { font-size: 15px; font-weight: 800; color: #1a2a3a; }
+.status-active-text { color: #16a34a; font-size: 12px; }
+.org-stat-label { font-size: 11px; color: #999; font-weight: 600; }
+.org-stat-divider { width: 1px; height: 24px; background: #eee; margin: 0 4px; }
 
 /* Card Edit Mode */
-.org-card-edit {
-    padding: 22px;
-}
-
+.org-card-edit { padding: 22px; }
 .edit-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 18px;
-    padding-bottom: 14px;
-    border-bottom: 1px solid #f0f0f0;
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #f0f0f0;
 }
-
-.edit-icon {
-    width: 20px;
-    height: 20px;
-    color: #16a34a;
-}
-
-.edit-title {
-    font-size: 14px;
-    font-weight: 800;
-    color: #1a2a3a;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.edit-fields {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 14px;
-    margin-bottom: 18px;
-}
-
-@media (max-width: 480px) {
-    .edit-fields { grid-template-columns: 1fr; }
-}
-
-.edit-actions {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-}
+.edit-icon { width: 20px; height: 20px; color: #16a34a; }
+.edit-title { font-size: 14px; font-weight: 800; color: #1a2a3a; text-transform: uppercase; letter-spacing: 0.3px; }
+.edit-fields { display: grid; grid-template-columns: 1fr auto; gap: 14px; margin-bottom: 18px; }
+@media (max-width: 480px) { .edit-fields { grid-template-columns: 1fr; } }
+.edit-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
 /* =========================================================
-   Empty State
+   Courses Section (inside org card)
+   ========================================================= */
+.courses-section {
+    padding: 14px 18px 16px;
+    border-top: 1px solid #f3f3f3;
+    background: #fafcfa;
+}
+.courses-section-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+}
+.courses-section-title {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 12px; font-weight: 700; color: #555;
+    text-transform: uppercase; letter-spacing: 0.4px;
+}
+.courses-icon { width: 15px; height: 15px; color: #16a34a; }
+.courses-count-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #dcfce7; color: #15803d;
+    font-size: 11px; font-weight: 800;
+    min-width: 20px; height: 20px; border-radius: 10px;
+    padding: 0 6px;
+}
+.btn-add-course {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #116b27; color: #fff;
+    border: none; border-radius: 8px;
+    padding: 6px 12px; font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s; font-family: inherit;
+}
+.btn-add-course:hover { background: #0b511c; transform: translateY(-1px); }
+
+/* Course list items */
+.course-list { display: flex; flex-direction: column; gap: 6px; }
+.course-item {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #fff; border: 1px solid #e8f5e9;
+    border-radius: 9px; padding: 8px 10px;
+    transition: border-color 0.2s;
+}
+.course-item:hover { border-color: #86efac; }
+.course-item-left { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.course-code-pill {
+    display: inline-block;
+    background: #f0fdf4; color: #15803d;
+    font-size: 10px; font-weight: 800;
+    letter-spacing: 0.5px; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 6px;
+    flex-shrink: 0;
+}
+.course-item-info { display: flex; flex-direction: column; min-width: 0; }
+.course-item-name {
+    font-size: 13px; font-weight: 700; color: #1a2a3a;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.course-item-voters { font-size: 11px; color: #999; font-weight: 600; }
+.btn-delete-course {
+    background: #fef2f2; color: #ef4444;
+    border: none; border-radius: 7px;
+    padding: 5px; cursor: pointer;
+    transition: background 0.18s;
+    display: flex; align-items: center; flex-shrink: 0;
+}
+.btn-delete-course:hover { background: #fecaca; }
+
+.courses-empty {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 16px 10px; color: #bbb;
+    font-size: 12px; text-align: center; line-height: 1.5;
+}
+.courses-empty strong { color: #16a34a; }
+
+/* =========================================================
+   Empty / Loading
    ========================================================= */
 .empty-state-card {
-    background: #fff;
-    border-radius: 18px;
-    padding: 60px 40px;
-    text-align: center;
-    box-shadow: 0 2px 14px rgba(0,0,0,0.06);
+    background: #fff; border-radius: 18px; padding: 60px 40px;
+    text-align: center; box-shadow: 0 2px 14px rgba(0,0,0,0.06);
     border: 2px dashed #e0e0e0;
 }
-
-.empty-icon-wrap {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 20px;
-    color: #c0c0c0;
+.empty-icon-wrap { width: 80px; height: 80px; margin: 0 auto 20px; color: #c0c0c0; }
+.empty-icon-wrap svg { width: 100%; height: 100%; }
+.empty-title { margin: 0 0 8px; font-size: 20px; font-weight: 800; color: #1a2a3a; }
+.empty-desc { margin: 0 0 24px; font-size: 14px; color: #888; max-width: 420px; margin-left: auto; margin-right: auto; line-height: 1.5; }
+.loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; }
+.loading-spinner-lg {
+    width: 40px; height: 40px;
+    border: 3px solid #e0e0e0; border-top-color: #16a34a;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
 }
-
-.empty-icon-wrap svg {
-    width: 100%;
-    height: 100%;
+.spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff; border-radius: 50%;
+    animation: spin 0.8s linear infinite; display: inline-block;
 }
-
-.empty-title {
-    margin: 0 0 8px;
-    font-size: 20px;
-    font-weight: 800;
-    color: #1a2a3a;
-}
-
-.empty-desc {
-    margin: 0 0 24px;
-    font-size: 14px;
-    color: #888;
-    max-width: 420px;
-    margin-left: auto;
-    margin-right: auto;
-    line-height: 1.5;
-}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { margin-top: 16px; font-size: 14px; color: #888; font-weight: 600; }
 
 /* =========================================================
-   Loading State
+   Add Course Modal
    ========================================================= */
-.loading-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 60px 20px;
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
 }
-
-.loading-spinner-lg {
-    width: 40px;
-    height: 40px;
-    border: 3px solid #e0e0e0;
-    border-top-color: #16a34a;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+.modal-box {
+    background: #fff; border-radius: 18px;
+    width: 100%; max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.22);
+    overflow: hidden;
 }
-
-.spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    display: inline-block;
+.modal-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding: 24px 28px 16px;
+    border-bottom: 1px solid #f0f0f0;
 }
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
+.modal-header-left { display: flex; gap: 14px; align-items: flex-start; }
+.modal-title { margin: 0 0 3px; font-size: 17px; font-weight: 800; color: #1a2a3a; }
+.modal-subtitle { margin: 0; font-size: 12.5px; color: #888; }
+.modal-close {
+    background: #f1f5f9; border: none; border-radius: 8px;
+    width: 32px; height: 32px; cursor: pointer;
+    font-size: 14px; color: #64748b; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s; flex-shrink: 0;
 }
-
-.loading-text {
-    margin-top: 16px;
-    font-size: 14px;
-    color: #888;
-    font-weight: 600;
+.modal-close:hover { background: #e2e8f0; }
+.modal-form { padding: 20px 28px 28px; }
+.modal-form-group { margin-bottom: 18px; }
+.modal-label {
+    display: block; font-size: 12px; font-weight: 700; color: #555;
+    text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 7px;
 }
+.req { color: #ef4444; }
+.optional { color: #aaa; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.modal-input {
+    width: 100%; padding: 11px 15px;
+    border: 1.5px solid #e0e0e0; border-radius: 10px;
+    font-size: 14px; color: #333; outline: none;
+    transition: border-color 0.2s; font-family: inherit;
+    box-sizing: border-box;
+}
+.modal-input:focus { border-color: #116b27; box-shadow: 0 0 0 3px rgba(17,107,39,0.1); }
+.modal-hint { font-size: 11px; color: #999; display: block; margin-top: 5px; }
+.modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+.btn-modal-submit {
+    flex: 1; background: #116b27; color: #fff;
+    border: none; border-radius: 10px;
+    padding: 12px 20px; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: all 0.2s;
+    font-family: inherit; display: flex; align-items: center;
+    justify-content: center; gap: 8px;
+}
+.btn-modal-submit:hover:not(:disabled) { background: #0b511c; }
+.btn-modal-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-modal-cancel {
+    background: #f1f5f9; color: #64748b;
+    border: none; border-radius: 10px;
+    padding: 12px 20px; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: background 0.2s; font-family: inherit;
+}
+.btn-modal-cancel:hover { background: #e2e8f0; }
 
 /* =========================================================
    Transitions
    ========================================================= */
-.slide-fade-enter-active {
-    transition: all 0.3s ease-out;
-}
+.slide-fade-enter-active { transition: all 0.3s ease-out; }
+.slide-fade-leave-active { transition: all 0.2s ease-in; }
+.slide-fade-enter-from { transform: translateY(-12px); opacity: 0; }
+.slide-fade-leave-to { transform: translateY(-8px); opacity: 0; }
 
-.slide-fade-leave-active {
-    transition: all 0.2s ease-in;
-}
-
-.slide-fade-enter-from {
-    transform: translateY(-12px);
-    opacity: 0;
-}
-
-.slide-fade-leave-to {
-    transform: translateY(-8px);
-    opacity: 0;
-}
+.modal-fade-enter-active { transition: opacity 0.22s ease; }
+.modal-fade-leave-active { transition: opacity 0.18s ease; }
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
 
 /* =========================================================
    Responsive

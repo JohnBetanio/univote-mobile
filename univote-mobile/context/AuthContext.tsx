@@ -13,6 +13,8 @@ interface AuthContextType {
   logout: () => Promise<void>;
   refreshFacialConfig: () => Promise<void>;
   updateProfile: (data: { name?: string; student_id?: string; age?: number; sex?: string; course?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateProfilePicture: (base64Image: string) => Promise<{ success: boolean; error?: string }>;
+  removeProfilePicture: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -165,8 +167,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateProfilePicture = async (base64Image: string) => {
+    try {
+      const response = await api.updateProfilePicture(base64Image);
+      if (response.data?.user && !response.error) {
+        setUser((prev) => {
+          if (!prev) return response.data!.user;
+          return {
+            ...prev,
+            ...response.data!.user,
+          };
+        });
+        return { success: true };
+      }
+      return { success: false, error: response.error || 'Failed to update profile picture' };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to update profile picture' };
+    }
+  };
+
+  const removeProfilePicture = async () => {
+    try {
+      const response = await api.removeProfilePicture();
+      if (response.data?.user && !response.error) {
+        setUser((prev) => {
+          if (!prev) return response.data!.user;
+          return {
+            ...prev,
+            ...response.data!.user,
+          };
+        });
+        return { success: true };
+      }
+      return { success: false, error: response.error || 'Failed to remove profile picture' };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to remove profile picture' };
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, registerStudent, finishRegistration, completeProfileSetup, loginStudent, loginWithGoogle, logout, refreshFacialConfig, updateProfile }}>
+    <AuthContext.Provider value={{ user, loading, registerStudent, finishRegistration, completeProfileSetup, loginStudent, loginWithGoogle, logout, refreshFacialConfig, updateProfile, updateProfilePicture, removeProfilePicture }}>
       {children}
     </AuthContext.Provider>
   );

@@ -313,11 +313,11 @@ export default function FaceVerificationModal({
     if (errorCode === 'no_match') {
       return (
         <View style={styles.guidanceBox}>
-          <Ionicons name="shield-outline" size={24} color={Colors.error} />
+          <Ionicons name="scan-outline" size={24} color={Colors.error} />
           <View style={styles.guidanceTextWrap}>
             <Text style={[styles.guidanceTitle, { color: Colors.error }]}>Identity Mismatch</Text>
             <Text style={[styles.guidanceDesc, { color: '#B71C1C' }]}>
-              The scanned face does not match the registered voter. You cannot vote unless your face matches your registered profile.
+              Face must be clear and centered inside the frame. Please look directly into the camera with good lighting and remove any items covering your face.
             </Text>
           </View>
         </View>
@@ -341,7 +341,7 @@ export default function FaceVerificationModal({
           instruction={
             action === 'verify'
               ? 'Please look straight into the camera to verify your face.'
-              : 'Fit your face inside the oval frame (only your face is scanned).'
+              : 'Attention: Real face must be present inside so you do not have problems during voting verification.'
           }
         />
       ) : (
@@ -373,6 +373,18 @@ export default function FaceVerificationModal({
                     <Text style={styles.mandatoryBannerText}>
                       Mandatory Step: You must enroll your face to finish registration and be eligible to vote.
                     </Text>
+                  </View>
+                )}
+
+                {(action === 'enroll' || action === 'reenroll') && (
+                  <View style={styles.attentionCard}>
+                    <Ionicons name="warning" size={20} color="#D97706" />
+                    <View style={styles.attentionTextWrap}>
+                      <Text style={styles.attentionTitle}>Attention: Real Face Required</Text>
+                      <Text style={styles.attentionDesc}>
+                        Your real face must be present inside the frame so that you don't encounter any problems during voting verification.
+                      </Text>
+                    </View>
                   </View>
                 )}
 
@@ -477,10 +489,11 @@ export default function FaceVerificationModal({
                   )}
                 </View>
 
-                {matchScore !== null && matchScore !== undefined && !isQualityIssue && errorCode === 'no_match' && (
-                  <View style={styles.scorePill}>
-                    <Text style={styles.scoreText}>
-                      Similarity Match: {Math.round(matchScore > 1 ? matchScore : matchScore * 100)}% (Required: {Math.round((lastResult?.threshold ?? 0.75) > 1 ? (lastResult?.threshold ?? 75) : (lastResult?.threshold ?? 0.75) * 100)}%)
+                {!isQualityIssue && errorCode === 'no_match' && (
+                  <View style={styles.mismatchNoticeCard}>
+                    <Ionicons name="information-circle-outline" size={20} color="#D97706" style={{ marginRight: 8, marginTop: 1 }} />
+                    <Text style={styles.mismatchNoticeText}>
+                      Face must be clear and centered inside the frame. Please look directly into the camera with good lighting.
                     </Text>
                   </View>
                 )}
@@ -560,11 +573,24 @@ const styles = StyleSheet.create({
   warningIcon: { backgroundColor: '#f59e0b' },
   successText: { fontSize: 22, fontWeight: '800', color: Colors.success, marginBottom: 10 },
   failedText: { fontSize: 22, fontWeight: '800', color: Colors.error, marginBottom: 10 },
-  scorePill: {
-    marginTop: 12, paddingHorizontal: 18, paddingVertical: 8,
-    backgroundColor: Colors.primaryBg, borderRadius: 20, marginBottom: 18,
+  mismatchNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 10,
+    width: '100%',
   },
-  scoreText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  mismatchNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
+    fontWeight: '600',
+    lineHeight: 18,
+  },
   errorCard: {
     width: '100%', backgroundColor: '#FFEBEE', borderRadius: 14,
     padding: 16, marginVertical: 12, marginBottom: 24,
@@ -601,6 +627,32 @@ const styles = StyleSheet.create({
   },
   ghostBtnText: {
     color: '#8899aa', fontSize: 14, fontWeight: '600',
+  },
+  attentionCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#FDE68A',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 20,
+    width: '100%',
+    gap: 12,
+  },
+  attentionTextWrap: {
+    flex: 1,
+  },
+  attentionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#92400E',
+    marginBottom: 4,
+  },
+  attentionDesc: {
+    fontSize: 12,
+    color: '#78350F',
+    lineHeight: 17,
   },
   mandatoryBanner: {
     flexDirection: 'row',

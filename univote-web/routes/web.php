@@ -77,6 +77,10 @@ Route::prefix('admin')->middleware('auth:admin')->group(function () {
         Route::post('organizations', 'store')->name('admin.organizations.store');
         Route::put('organizations/{organization}', 'update')->name('admin.organizations.update');
         Route::delete('organizations/{organization}', 'destroy')->name('admin.organizations.destroy');
+        // Courses nested under organization
+        Route::get('organizations/{organization}/courses', 'listCourses')->name('admin.organizations.courses.index');
+        Route::post('organizations/{organization}/courses', 'storeCourse')->name('admin.organizations.courses.store');
+        Route::delete('organizations/{organization}/courses/{course}', 'destroyCourse')->name('admin.organizations.courses.destroy');
     });
 
     // Results

@@ -51,7 +51,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
   const glowAnim = useRef(new Animated.Value(0.4)).current;
 
   useEffect(() => {
-    // Scanning line: loops top → bottom of the oval
+    // Scanning line: loops top â†’ bottom of the oval
     const scan = Animated.loop(
       Animated.sequence([
         Animated.timing(scanAnim, {
@@ -141,7 +141,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
       });
 
       if (photo && photo.uri) {
-        // ─── Orientation normalization ───────────────────────────────────────────
+        // â”€â”€â”€ Orientation normalization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // expo-camera's `base64` output may still carry wrong pixel orientation on
         // some Android devices even with skipProcessing:false, because the raw sensor
         // data is returned before the system EXIF rotation is applied in certain
@@ -167,7 +167,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
           console.warn('ImageManipulator orientation fix failed, using raw base64:', manipErr);
           normalizedBase64 = photo.base64;
         }
-        // ────────────────────────────────────────────────────────────────────────
+        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         if (!normalizedBase64) {
           setCapturing(false);
@@ -179,14 +179,14 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
         setCapturing(false);
 
         if (mode === 'enroll') {
-          // ─── FACE REGISTRATION — NO RULES ──────────────────────────────────────
+          // â”€â”€â”€ FACE REGISTRATION â€” NO RULES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           // Simple photo capture: no quality rules, no detection checks.
           // The voter can simply choose to Retake or Proceed.
           setValidationSuccess(true);
           setIsValidating(false);
           setValidationMessage('Photo captured. Tap Proceed to use this photo, or Retake.');
         } else {
-          // ─── FACE VERIFICATION — No pre-flight checks ─────────────────────────
+          // â”€â”€â”€ FACE VERIFICATION â€” No pre-flight checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
           // Identity matching is done server-side against the registered face.
           // Just enable the Continue button immediately after capture.
           setValidationSuccess(true);
@@ -279,7 +279,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
 
   return (
     <View style={styles.container}>
-      {/* ── Top bar ── */}
+      {/* â”€â”€ Top bar â”€â”€ */}
       <View style={styles.topBar}>
         <TouchableOpacity onPress={onCancel} style={styles.cancelBtn}>
           <Ionicons name="close" size={24} color="#fff" />
@@ -290,7 +290,25 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
         <View style={styles.switchBtn} />
       </View>
 
-      {/* ── Camera ── */}
+      {mode === 'enroll' && (
+        <View style={styles.attentionBanner}>
+          <Ionicons name="warning" size={16} color="#fff" style={styles.attentionIcon} />
+          <Text style={styles.attentionText}>
+            Attention: Your real face must be present inside so you don't have any problems during voting verification.
+          </Text>
+        </View>
+      )}
+
+      {mode === 'enroll' && (
+        <View style={styles.attentionBanner}>
+          <Ionicons name="warning" size={16} color="#fff" style={styles.attentionIcon} />
+          <Text style={styles.attentionText}>
+            Attention: Your real face must be present inside so you don't have any problems during voting verification.
+          </Text>
+        </View>
+      )}
+
+      {/* â”€â”€ Camera â”€â”€ */}
       <View style={styles.cameraWrap}>
         <CameraView
           ref={cameraRef}
@@ -299,9 +317,9 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
           mode="picture"
         />
 
-        {/* ── Overlays positioned absolutely over camera ── */}
+        {/* â”€â”€ Overlays positioned absolutely over camera â”€â”€ */}
         <View style={StyleSheet.absoluteFill}>
-          {/* ── Dark overlay with oval face cutout ── */}
+          {/* â”€â”€ Dark overlay with oval face cutout â”€â”€ */}
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
             {/* Top dark strip */}
             <View style={styles.darkTop} />
@@ -359,9 +377,9 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
                     ? 'Photo captured. Tap Verify.'
                     : 'Photo captured.')
                 : countdown !== null
-                  ? `Hold still… ${countdown}`
+                  ? `Hold stillâ€¦ ${countdown}`
                   : capturing
-                    ? 'Capturing photo…'
+                    ? 'Capturing photoâ€¦'
                     : mode === 'enroll'
                       ? 'Take a photo for your profile'
                       : 'Fit full face inside the oval'}
@@ -379,7 +397,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
           {capturing && !previewUri && (
             <View style={styles.capturingOverlay}>
               <ActivityIndicator size="large" color={Colors.primary} />
-              <Text style={styles.capturingText}>Capturing photo…</Text>
+              <Text style={styles.capturingText}>Capturing photoâ€¦</Text>
             </View>
           )}
 
@@ -392,7 +410,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
         </View>
       </View>
 
-      {/* ── Instruction pill ── */}
+      {/* â”€â”€ Instruction pill â”€â”€ */}
       <View style={styles.instructionBox}>
         <Ionicons
           name={validationSuccess ? 'checkmark-circle' : 'camera-outline'}
@@ -412,7 +430,7 @@ export default function FaceCapture({ mode, onCapture, onCancel, instruction }: 
         </Text>
       </View>
 
-      {/* ── Bottom controls ── */}
+      {/* â”€â”€ Bottom controls â”€â”€ */}
       <View style={styles.bottomBar}>
         {previewUri ? (
           <>
@@ -464,7 +482,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
 
-  // ── Top bar ─────────────────────────────────────
+  // â”€â”€ Top bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   topBar: {
     position: 'absolute',
     top: 0,
@@ -501,7 +519,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── Camera ──────────────────────────────────────
+  // â”€â”€ Camera â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   cameraWrap: {
     flex: 1,
     overflow: 'hidden',
@@ -510,7 +528,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // ── Overlay dark bands ───────────────────────────
+  // â”€â”€ Overlay dark bands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   darkTop: {
     height: '20%',
     backgroundColor: 'rgba(0,0,0,0.62)',
@@ -530,7 +548,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.62)',
   },
 
-  // ── Oval face shape ──────────────────────────────
+  // â”€â”€ Oval face shape â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ovalWrapper: {
     width: OVAL_WIDTH,
     height: OVAL_HEIGHT,
@@ -561,7 +579,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── Corner accent dots ───────────────────────────
+  // â”€â”€ Corner accent dots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   accentDot: {
     position: 'absolute',
     width: 10,
@@ -574,7 +592,7 @@ const styles = StyleSheet.create({
   dotBL: { bottom: OVAL_HEIGHT * 0.18, left: 8 },
   dotBR: { bottom: OVAL_HEIGHT * 0.18, right: 8 },
 
-  // ── Scan line ────────────────────────────────────
+  // â”€â”€ Scan line â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   scanLine: {
     position: 'absolute',
     left: 10,
@@ -589,7 +607,7 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
 
-  // ── Status badge ─────────────────────────────────
+  // â”€â”€ Status badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   statusBadge: {
     position: 'absolute',
     top: '78%',
@@ -614,7 +632,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // ── Countdown / Capturing ─────────────────────────
+  // â”€â”€ Countdown / Capturing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   countdownOverlay: {
     position: 'absolute',
     top: 0,
@@ -661,7 +679,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
 
-  // ── Instruction pill ─────────────────────────────
+  // â”€â”€ Instruction pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   instructionBox: {
     position: 'absolute',
     bottom: 110,
@@ -683,7 +701,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // ── Bottom bar ───────────────────────────────────
+  // â”€â”€ Bottom bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -744,6 +762,27 @@ const styles = StyleSheet.create({
   secondaryBtnText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  attentionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D97706',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    zIndex: 10,
+  },
+  attentionIcon: {
+    marginRight: 8,
+  },
+  attentionText: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
+  _dummy: {
     fontWeight: '600',
   },
 

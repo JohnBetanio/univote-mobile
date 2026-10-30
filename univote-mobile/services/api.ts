@@ -19,6 +19,18 @@ const getApiBaseUrl = (): string => {
 
 export const API_BASE_URL = getApiBaseUrl();
 
+export const getFullImageUrl = (path?: string | null): string | null => {
+  if (!path) return null;
+  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("data:")) {
+    return path;
+  }
+  const cleanPath = path.startsWith("/") ? path.slice(1) : path;
+  if (cleanPath.startsWith("storage/")) {
+    return `${API_BASE_URL.replace(/\/api\/?$/, "")}/${cleanPath}`;
+  }
+  return `${API_BASE_URL.replace(/\/api\/?$/, "")}/storage/${cleanPath}`;
+};
+
 
 interface ApiResponse<T> {
   data?: T;
@@ -77,6 +89,8 @@ interface User {
   is_new_user?: boolean;
   is_profile_completed?: boolean;
   needs_setup?: boolean;
+  avatar?: string | null;
+  avatar_url?: string | null;
 }
 
 interface FacialConfig {
@@ -361,6 +375,19 @@ class ApiService {
     return this.request<{ user: User; message: string }>("/auth/update-profile", {
       method: "PUT",
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateProfilePicture(base64Image: string) {
+    return this.request<{ user: User; message: string; avatar_url?: string }>("/auth/update-profile-picture", {
+      method: "POST",
+      body: JSON.stringify({ base64: base64Image }),
+    });
+  }
+
+  async removeProfilePicture() {
+    return this.request<{ user: User; message: string }>("/auth/remove-profile-picture", {
+      method: "DELETE",
     });
   }
 

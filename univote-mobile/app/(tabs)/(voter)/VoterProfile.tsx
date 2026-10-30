@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Switch,
   ActivityIndicator, RefreshControl, Modal, TextInput, KeyboardAvoidingView,
-  Platform,
+  Platform, Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/context/AuthContext';
 import { Colors } from '@/constants/Colors';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, FacialConfig, Organization } from '@/services/api';
+import { api, FacialConfig, Organization, getFullImageUrl } from '@/services/api';
 import FaceVerificationModal, { FaceVerificationAction } from '@/components/FaceVerificationModal';
 
 const formatDate = (iso: string | null) => {
@@ -69,7 +70,7 @@ function InfoRow({ icon, label, value, iconBg, iconColor }: {
 }
 
 export default function VoterProfileScreen() {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, updateProfilePicture, removeProfilePicture } = useAuth();
   const router = useRouter();
 
   const [facialConfig, setFacialConfig] = useState<FacialConfig | null>(null);
@@ -84,7 +85,7 @@ export default function VoterProfileScreen() {
   // Edit Profile modal state
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editName, setEditName] = useState('');
-  const [editCourse, setEditCourse] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
@@ -105,6 +106,10 @@ export default function VoterProfileScreen() {
       .slice(0, 2)
       .toUpperCase() || 'U';
   }, [name]);
+
+  const avatarUrl = useMemo(() => {
+    return getFullImageUrl(user?.avatar_url || user?.avatar);
+  }, [user?.avatar_url, user?.avatar]);
 
   // Compute real organization name (ensuring NO Org #3 or numeric IDs are displayed)
   const organizationName = useMemo(() => {
@@ -160,21 +165,15 @@ export default function VoterProfileScreen() {
 
   const handleOpenEdit = () => {
     setEditName(user?.name || '');
-    setEditCourse(user?.course || '');
     setEditError('');
     setEditModalVisible(true);
   };
 
   const handleSaveProfile = async () => {
     const trimmedName = editName.trim();
-    const trimmedCourse = editCourse.trim();
 
     if (!trimmedName) {
       setEditError('Please enter your full name');
-      return;
-    }
-    if (!trimmedCourse) {
-      setEditError('Please enter your course');
       return;
     }
 
@@ -183,17 +182,132 @@ export default function VoterProfileScreen() {
 
     const res = await updateProfile({
       name: trimmedName,
-      course: trimmedCourse,
     });
 
     setEditSaving(false);
 
     if (res.success) {
       setEditModalVisible(false);
-      Alert.alert('Profile Updated', 'Your profile details have been saved successfully.');
+      Alert.alert('Profile Updated', 'Your name has been updated successfully.');
     } else {
-      setEditError(res.error || 'Failed to update profile details');
+      setEditError(res.error || 'Failed to update name');
     }
+  };
+
+  const handlePickImage = async (fromCamera: boolean) => {
+    try {
+      if (fromCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Camera permission is needed to take a profile picture.');
+          return;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.7,
+          base64: true,
+        });
+
+        if (!result.canceled && result.assets && result.assets[0]) {
+          await uploadSelectedAvatar(result.assets[0]);
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Photo library permission is needed to choose a profile picture.');
+          return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.7,
+          base64: true,
+        });
+
+        if (!result.canceled && result.assets && result.assets[0]) {
+          await uploadSelectedAvatar(result.assets[0]);
+        }
+      }
+    } catch (e: any) {
+      console.error('Image picker error:', e);
+      Alert.alert('Error', 'Unable to pick image. Please try again.');
+    }
+  };
+
+  const uploadSelectedAvatar = async (asset: ImagePicker.ImagePickerAsset) => {
+    setUploadingAvatar(true);
+    try {
+      const base64Data = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+      const res = await updateProfilePicture(base64Data);
+      if (res.success) {
+        Alert.alert('Success', 'Profile picture updated successfully!');
+      } else {
+        Alert.alert('Upload Failed', res.error || 'Failed to update profile picture.');
+      }
+    } catch (err: any) {
+      Alert.alert('Upload Error', err?.message || 'Failed to update profile picture.');
+    } finally {
+      if (mountedRef.current) {
+        setUploadingAvatar(false);
+      }
+    }
+  };
+
+  const handleRemoveAvatar = () => {
+    Alert.alert(
+      'Remove Photo',
+      'Are you sure you want to remove your profile picture?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setUploadingAvatar(true);
+            try {
+              const res = await removeProfilePicture();
+              if (res.success) {
+                Alert.alert('Success', 'Profile picture removed.');
+              } else {
+                Alert.alert('Error', res.error || 'Failed to remove profile picture.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err?.message || 'Failed to remove profile picture.');
+            } finally {
+              if (mountedRef.current) {
+                setUploadingAvatar(false);
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleAvatarOptions = () => {
+    const hasPhoto = Boolean(user?.avatar || user?.avatar_url);
+
+    const buttons: any[] = [
+      { text: 'Take Photo', onPress: () => handlePickImage(true) },
+      { text: 'Choose from Gallery', onPress: () => handlePickImage(false) },
+    ];
+
+    if (hasPhoto) {
+      buttons.push({
+        text: 'Remove Photo',
+        onPress: handleRemoveAvatar,
+        style: 'destructive',
+      });
+    }
+
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+
+    Alert.alert('Profile Picture', 'Add or change your profile picture anytime:', buttons);
   };
 
   const handleLogout = async () => {
@@ -255,9 +369,23 @@ export default function VoterProfileScreen() {
 
       {/* ── Profile Banner ── */}
       <View style={styles.bannerCard}>
-        <View style={styles.bannerAvatar}>
-          <Text style={styles.bannerAvatarText}>{initials}</Text>
-        </View>
+        <TouchableOpacity style={styles.bannerAvatarWrapper} onPress={handleAvatarOptions} activeOpacity={0.85}>
+          <View style={styles.bannerAvatar}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.bannerAvatarImage} />
+            ) : (
+              <Text style={styles.bannerAvatarText}>{initials}</Text>
+            )}
+            {uploadingAvatar && (
+              <View style={styles.avatarLoadingOverlay}>
+                <ActivityIndicator size="small" color="#fff" />
+              </View>
+            )}
+          </View>
+          <View style={styles.avatarCameraBadge}>
+            <Ionicons name="camera" size={13} color="#fff" />
+          </View>
+        </TouchableOpacity>
         <Text style={styles.bannerName}>{name}</Text>
         <Text style={styles.bannerEmail}>{email}</Text>
         <View style={styles.bannerBadgeRow}>
@@ -272,10 +400,16 @@ export default function VoterProfileScreen() {
             </View>
           )}
         </View>
-        <TouchableOpacity style={styles.bannerEditBtn} onPress={handleOpenEdit} activeOpacity={0.85}>
-          <Ionicons name="pencil" size={14} color="#fff" />
-          <Text style={styles.bannerEditBtnText}>Edit Profile</Text>
-        </TouchableOpacity>
+        <View style={styles.bannerButtonRow}>
+          <TouchableOpacity style={styles.bannerEditBtn} onPress={handleOpenEdit} activeOpacity={0.85}>
+            <Ionicons name="pencil" size={14} color="#fff" />
+            <Text style={styles.bannerEditBtnText}>Edit Name</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bannerPhotoBtn} onPress={handleAvatarOptions} activeOpacity={0.85}>
+            <Ionicons name="camera-outline" size={14} color={Colors.primary} />
+            <Text style={styles.bannerPhotoBtnText}>{avatarUrl ? 'Change Photo' : 'Add Photo'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Quick Stats ── */}
@@ -466,7 +600,7 @@ export default function VoterProfileScreen() {
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>Edit Profile</Text>
-                <Text style={styles.modalSubtitle}>Update your personal information</Text>
+                <Text style={styles.modalSubtitle}>Update your name and personal details</Text>
               </View>
               <TouchableOpacity
                 style={styles.modalCloseBtn}
@@ -486,7 +620,7 @@ export default function VoterProfileScreen() {
                 </View>
               ) : null}
 
-              {/* Full Name */}
+              {/* Full Name (Editable) */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Full Name *</Text>
                 <TextInput
@@ -500,24 +634,45 @@ export default function VoterProfileScreen() {
                 <Text style={styles.inputHelp}>Format: Dela Cruz, Juan J.</Text>
               </View>
 
-              {/* Course */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Course *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={editCourse}
-                  onChangeText={setEditCourse}
-                  placeholder="e.g. BS Information Technology"
-                  placeholderTextColor={Colors.textMuted}
-                  editable={!editSaving}
-                />
+              {/* Profile Photo Action */}
+              <TouchableOpacity
+                style={styles.modalPhotoAction}
+                onPress={() => {
+                  setEditModalVisible(false);
+                  setTimeout(() => handleAvatarOptions(), 300);
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="camera" size={18} color={Colors.primary} />
+                <Text style={styles.modalPhotoActionText}>
+                  {avatarUrl ? 'Change Profile Picture' : 'Add Profile Picture'}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={Colors.primary} />
+              </TouchableOpacity>
+
+              {/* Read-Only Academic Records */}
+              <View style={styles.readOnlyCard}>
+                <View style={styles.readOnlyRow}>
+                  <Text style={styles.readOnlyLabel}>Course</Text>
+                  <Text style={styles.readOnlyValue}>{course}</Text>
+                </View>
+                <View style={styles.readOnlyDivider} />
+                <View style={styles.readOnlyRow}>
+                  <Text style={styles.readOnlyLabel}>Year Level</Text>
+                  <Text style={styles.readOnlyValue}>{yearLevel}</Text>
+                </View>
+                <View style={styles.readOnlyDivider} />
+                <View style={styles.readOnlyRow}>
+                  <Text style={styles.readOnlyLabel}>Department</Text>
+                  <Text style={styles.readOnlyValue} numberOfLines={2}>{organizationName}</Text>
+                </View>
               </View>
 
               {/* Locked Notice */}
               <View style={styles.lockedNotice}>
                 <Ionicons name="lock-closed" size={16} color="#8899aa" />
                 <Text style={styles.lockedNoticeText}>
-                  Year Level and College Department are restricted and can only be modified by an administrator.
+                  Course, Year Level, and Department are restricted academic records and can only be modified by an administrator.
                 </Text>
               </View>
             </ScrollView>
@@ -1010,5 +1165,107 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  bannerAvatarWrapper: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  bannerAvatarImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+  },
+  avatarLoadingOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCameraBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: Colors.primary,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    elevation: 4,
+  },
+  bannerButtonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+  },
+  bannerPhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 20,
+  },
+  bannerPhotoBtnText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  modalPhotoAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  modalPhotoActionText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  readOnlyCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 14,
+  },
+  readOnlyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  readOnlyLabel: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    fontWeight: '600',
+  },
+  readOnlyValue: {
+    fontSize: 13,
+    color: Colors.text,
+    fontWeight: '700',
+    maxWidth: '65%',
+    textAlign: 'right',
+  },
+  readOnlyDivider: {
+    height: 1,
+    backgroundColor: '#EDF2F7',
+    marginVertical: 4,
   },
 });

@@ -23,4 +23,9 @@ class Organization extends Model
     {
         return $this->hasMany(Election::class);
     }
+
+    public function courses(): HasMany
+    {
+        return $this->hasMany(Course::class);
+    }
 }

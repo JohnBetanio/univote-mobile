@@ -7,7 +7,9 @@ use App\Models\Voter;
 use App\Models\Admin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -138,6 +140,8 @@ class AuthController extends Controller
                 'sex' => $role === 'student' ? $user->sex : null,
                 'course' => $role === 'student' ? $user->course : null,
                 'year_level' => $role === 'student' ? $user->year_level : null,
+                'avatar' => $role === 'student' ? $user->avatar : ($role === 'admin' ? $user->profile_picture : null),
+                'avatar_url' => $role === 'student' ? $user->avatar_url : ($role === 'admin' ? $user->profile_picture_url : null),
                 'facial_config' => $role === 'student' ? $user->facial_config : null,
             ],
             'token' => $token,
@@ -191,6 +195,11 @@ class AuthController extends Controller
             $response['sex'] = $user->sex;
             $response['course'] = $user->course;
             $response['year_level'] = $user->year_level;
+            $response['avatar'] = $user->avatar;
+            $response['avatar_url'] = $user->avatar_url;
+        } elseif ($role === 'admin') {
+            $response['profile_picture'] = $user->profile_picture;
+            $response['profile_picture_url'] = $user->profile_picture_url;
         }
 
         return response()->json($response);
@@ -225,8 +234,10 @@ class AuthController extends Controller
             $email = strtolower($payload['email'] ?? '');
             $name = $payload['name'] ?? $name;
             $googleId = $payload['sub'] ?? $googleId;
+            $avatar = $payload['picture'] ?? null;
         } else {
             $email = strtolower($request->email);
+            $avatar = null;
         }
 
         if (empty($email)) {
@@ -264,6 +275,7 @@ class AuthController extends Controller
                     'sex' => 'Other',
                     'course' => 'Not Specified',
                     'year_level' => '1st Year',
+                    'avatar' => $avatar,
                     'is_verified' => true,
                     'is_profile_completed' => false,
                 ]);
@@ -279,9 +291,10 @@ class AuthController extends Controller
             }
         }
 
-        if ($voter && $googleId && !$voter->google_id) {
-            $voter->update(['google_id' => $googleId]);
-        }
+        $updates = [];
+        if ($voter && $googleId && !$voter->google_id) $updates['google_id'] = $googleId;
+        if ($voter && !empty($avatar) && !$voter->avatar) $updates['avatar'] = $avatar;
+        if (!empty($updates)) $voter->update($updates);
 
         $voter->load(['facialProfile', 'organization']);
         $token = $voter->createToken('mobile-app')->plainTextToken;
@@ -308,6 +321,8 @@ class AuthController extends Controller
                 'sex' => $voter->sex,
                 'course' => $voter->course,
                 'year_level' => $voter->year_level,
+                'avatar' => $voter->avatar,
+                'avatar_url' => $voter->avatar_url,
                 'facial_config' => $voter->facial_config,
             ],
             'token' => $token,
@@ -387,6 +402,8 @@ class AuthController extends Controller
                 'sex' => $voter->sex,
                 'course' => $voter->course,
                 'year_level' => $voter->year_level,
+                'avatar' => $voter->avatar,
+                'avatar_url' => $voter->avatar_url,
                 'facial_config' => $voter->facial_config,
             ],
         ]);
@@ -453,6 +470,140 @@ class AuthController extends Controller
                 'sex' => $voter->sex,
                 'course' => $voter->course,
                 'year_level' => $voter->year_level,
+                'avatar' => $voter->avatar,
+                'avatar_url' => $voter->avatar_url,
+                'facial_config' => $voter->facial_config,
+            ],
+        ]);
+    }
+
+    public function updateProfilePicture(Request $request)
+    {
+        $voter = $request->user();
+        if (!$voter || !($voter instanceof Voter)) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $file = $request->file('avatar') ?? $request->file('profile_picture') ?? $request->file('image');
+        $base64Input = $request->input('base64') ?? $request->input('avatar') ?? $request->input('image');
+
+        $storedPath = null;
+
+        if ($file && $file->isValid()) {
+            if ($voter->avatar && !str_starts_with($voter->avatar, 'http') && Storage::disk('public')->exists($voter->avatar)) {
+                Storage::disk('public')->delete($voter->avatar);
+            }
+            $storedPath = $file->store('voter-avatars', 'public');
+        } elseif (is_string($base64Input) && !empty($base64Input)) {
+            $cleaned = preg_replace('#^data:image/\w+;base64,#i', '', $base64Input);
+            $binary = base64_decode($cleaned);
+
+            if ($binary === false) {
+                return response()->json(['error' => 'Invalid base64 image data'], 422);
+            }
+
+            if ($voter->avatar && !str_starts_with($voter->avatar, 'http') && Storage::disk('public')->exists($voter->avatar)) {
+                Storage::disk('public')->delete($voter->avatar);
+            }
+
+            $fileName = 'voter-avatars/' . Str::uuid() . '.jpg';
+            Storage::disk('public')->put($fileName, $binary);
+            $storedPath = $fileName;
+        } else {
+            return response()->json(['error' => 'No image provided. Please select an image.'], 422);
+        }
+
+        $voter->avatar = $storedPath;
+        $voter->save();
+        $voter->refresh();
+        $voter->load(['facialProfile', 'organization']);
+
+        \App\Models\AuditLog::record([
+            'user_id'    => $voter->id,
+            'user_type'  => get_class($voter),
+            'actor_name' => $voter->name ?? $voter->email,
+            'action'     => 'PROFILE_PICTURE_UPDATE',
+            'description'=> 'Voter updated profile picture',
+        ]);
+
+        return response()->json([
+            'message' => 'Profile picture updated successfully',
+            'avatar_url' => $voter->avatar_url,
+            'user' => [
+                'id' => $voter->id,
+                'name' => $voter->name,
+                'email' => $voter->email,
+                'role' => 'student',
+                'hasVoted' => $voter->hasVotedIn(null),
+                'is_profile_completed' => (bool)$voter->is_profile_completed,
+                'needs_setup' => $voter->needsProfileSetup(),
+                'organization_id' => $voter->organization_id,
+                'organization' => $voter->organization ? [
+                    'id' => $voter->organization->id,
+                    'name' => $voter->organization->name,
+                    'code' => $voter->organization->code,
+                ] : null,
+                'google_id' => $voter->google_id,
+                'student_id' => $voter->student_id,
+                'age' => $voter->age,
+                'sex' => $voter->sex,
+                'course' => $voter->course,
+                'year_level' => $voter->year_level,
+                'avatar' => $voter->avatar,
+                'avatar_url' => $voter->avatar_url,
+                'facial_config' => $voter->facial_config,
+            ],
+        ]);
+    }
+
+    public function removeProfilePicture(Request $request)
+    {
+        $voter = $request->user();
+        if (!$voter || !($voter instanceof Voter)) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        if ($voter->avatar && !str_starts_with($voter->avatar, 'http') && Storage::disk('public')->exists($voter->avatar)) {
+            Storage::disk('public')->delete($voter->avatar);
+        }
+
+        $voter->avatar = null;
+        $voter->save();
+        $voter->refresh();
+        $voter->load(['facialProfile', 'organization']);
+
+        \App\Models\AuditLog::record([
+            'user_id'    => $voter->id,
+            'user_type'  => get_class($voter),
+            'actor_name' => $voter->name ?? $voter->email,
+            'action'     => 'PROFILE_PICTURE_REMOVE',
+            'description'=> 'Voter removed profile picture',
+        ]);
+
+        return response()->json([
+            'message' => 'Profile picture removed successfully',
+            'user' => [
+                'id' => $voter->id,
+                'name' => $voter->name,
+                'email' => $voter->email,
+                'role' => 'student',
+                'hasVoted' => $voter->hasVotedIn(null),
+                'is_profile_completed' => (bool)$voter->is_profile_completed,
+                'needs_setup' => $voter->needsProfileSetup(),
+                'organization_id' => $voter->organization_id,
+                'organization' => $voter->organization ? [
+                    'id' => $voter->organization->id,
+                    'name' => $voter->organization->name,
+                    'code' => $voter->organization->code,
+                ] : null,
+                'google_id' => $voter->google_id,
+                'student_id' => $voter->student_id,
+                'age' => $voter->age,
+                'sex' => $voter->sex,
+                'course' => $voter->course,
+                'year_level' => $voter->year_level,
+                'avatar' => $voter->avatar,
+                'avatar_url' => $voter->avatar_url,
                 'facial_config' => $voter->facial_config,
             ],
         ]);

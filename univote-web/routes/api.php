@@ -56,6 +56,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'user']);
     Route::post('/auth/setup-profile', [AuthController::class, 'setupProfile']);
     Route::put('/auth/update-profile', [AuthController::class, 'updateProfile']);
+    Route::post('/auth/update-profile-picture', [AuthController::class, 'updateProfilePicture']);
+    Route::delete('/auth/remove-profile-picture', [AuthController::class, 'removeProfilePicture']);
 
     // Facial Verification routes
     Route::prefix('facial')->group(function () {
