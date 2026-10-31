@@ -33,6 +33,25 @@
                 </select>
             </div>
 
+            <div class="filter-group">
+                <label for="courseFilterSelect" class="toolbar-label">Filter by Course:</label>
+                <select
+                    id="courseFilterSelect"
+                    v-model="selectedCourseFilter"
+                    class="filter-select"
+                >
+                    <option value="all">All Courses</option>
+                    <option
+                        v-for="c in availableCourses"
+                        :key="c.id || c.code || c.name"
+                        :value="c.code || c.name"
+                    >
+                        {{ c.code || c.name }}<template v-if="c.name && c.code && c.name !== c.code"> ({{ c.name }})</template>
+                    </option>
+                    <option value="unassigned">Unassigned / No Course</option>
+                </select>
+            </div>
+
             <div class="filter-group search-group">
                 <label for="voterSearchInput" class="toolbar-label">Search:</label>
                 <input
@@ -80,7 +99,7 @@
                                 </div>
                             </td>
                             <td>
-                                <span class="voter-course" :title="voter.course || ''">{{ voter.course || "—" }}</span>
+                                <span class="voter-course" :title="getVoterCourseText(voter)">{{ getVoterCourseText(voter) }}</span>
                             </td>
                             <td>
                                 <span v-if="voter.organization" class="org-pill">
@@ -130,8 +149,8 @@
         <div v-else class="empty-state">
             <div class="empty-icon-wrap" aria-hidden="true">♙</div>
             <h3>No voters found</h3>
-            <p v-if="selectedOrgFilter !== 'all' || searchQuery || voteStatusFilter !== 'all'">
-                Try adjusting your search query or organization filters.
+            <p v-if="selectedOrgFilter !== 'all' || selectedCourseFilter !== 'all' || searchQuery || voteStatusFilter !== 'all'">
+                Try adjusting your search query, course, or organization filters.
             </p>
             <p v-else>No voters are currently registered in the database.</p>
         </div>
@@ -170,14 +189,34 @@
 
                         <!-- Course -->
                         <div class="form-group">
-                            <label for="editCourse" class="form-label">Course / Program</label>
+                            <label for="editCourseSelect" class="form-label">Course / Program</label>
+                            <select
+                                id="editCourseSelect"
+                                v-model="editCourseSelectValue"
+                                class="form-input"
+                                @change="onEditCourseSelectChange"
+                            >
+                                <option value="">None / Unassigned</option>
+                                <optgroup label="Available Courses">
+                                    <option
+                                        v-for="c in availableCourses"
+                                        :key="c.id || c.code || c.name"
+                                        :value="c.code || c.name"
+                                    >
+                                        {{ c.code || c.name }} <template v-if="c.name && c.code && c.name !== c.code">({{ c.name }})</template>
+                                    </option>
+                                </optgroup>
+                                <option value="__custom__">Custom / Enter Other Course...</option>
+                            </select>
                             <input
-                                id="editCourse"
+                                v-if="editCourseSelectValue === '__custom__'"
+                                id="editCourseCustom"
                                 v-model.trim="editForm.course"
                                 type="text"
-                                class="form-input"
-                                placeholder="e.g. BS Information Technology"
+                                class="form-input custom-course-input"
+                                placeholder="Type course code or name (e.g. BS Civil Engineering)"
                             />
+                            <p class="field-hint">Select a course or enter a custom course name.</p>
                         </div>
 
                         <!-- Organization -->
@@ -243,7 +282,9 @@ export default {
     data() {
         return {
             organizationOptions: [],
+            courseOptions: [],
             selectedOrgFilter: "all",
+            selectedCourseFilter: "all",
             searchQuery: "",
             voteStatusFilter: "all",
             isEditModalOpen: false,
@@ -251,9 +292,11 @@ export default {
             formError: null,
             validationErrors: {},
             editingVoterId: null,
+            editCourseSelectValue: "",
             editForm: {
                 name: "",
                 course: "",
+                course_id: null,
                 organization_id: null,
             },
         };
@@ -274,6 +317,31 @@ export default {
         organizations() {
             return this.organizationOptions;
         },
+        availableCourses() {
+            const list = [...this.courseOptions];
+            const knownKeys = new Set(
+                list.map((c) => (c.code || c.name || "").toLowerCase().trim()).filter(Boolean)
+            );
+
+            // Also include distinct courses from registered voters if not in list
+            (this.voters || []).forEach((v) => {
+                const raw = typeof v.course === "string" ? v.course.trim() : "";
+                if (raw && raw !== "Not Specified") {
+                    const key = raw.toLowerCase();
+                    if (!knownKeys.has(key)) {
+                        knownKeys.add(key);
+                        list.push({
+                            id: v.course_id || `raw-${key}`,
+                            code: raw,
+                            name: raw,
+                            voters_count: 1,
+                        });
+                    }
+                }
+            });
+
+            return list;
+        },
         filteredVoters() {
             return this.voters.filter((voter) => {
                 // Organization filter
@@ -283,6 +351,44 @@ export default {
                     }
                 } else if (this.selectedOrgFilter !== "all") {
                     if (Number(voter.organization_id) !== Number(this.selectedOrgFilter)) {
+                        return false;
+                    }
+                }
+
+                // Course filter
+                if (this.selectedCourseFilter === "unassigned") {
+                    const cText = this.getVoterCourseText(voter);
+                    if (cText && cText !== "—") {
+                        return false;
+                    }
+                } else if (this.selectedCourseFilter !== "all") {
+                    const sel = String(this.selectedCourseFilter).toLowerCase().trim();
+                    const vCourse = (voter.course || "").toLowerCase().trim();
+                    const vRelCode = (voter.courseRelation?.code || "").toLowerCase().trim();
+                    const vRelName = (voter.courseRelation?.name || "").toLowerCase().trim();
+                    const vCourseId = voter.course_id ? String(voter.course_id) : null;
+
+                    const matchedCourse = this.availableCourses.find(
+                        (c) =>
+                            String(c.id) === sel ||
+                            (c.code && c.code.toLowerCase().trim() === sel) ||
+                            (c.name && c.name.toLowerCase().trim() === sel)
+                    );
+
+                    let matches = false;
+                    if (matchedCourse) {
+                        const targetId = String(matchedCourse.id);
+                        const targetCode = (matchedCourse.code || "").toLowerCase().trim();
+                        const targetName = (matchedCourse.name || "").toLowerCase().trim();
+
+                        if (vCourseId && vCourseId === targetId) matches = true;
+                        if (targetCode && (vCourse === targetCode || vRelCode === targetCode)) matches = true;
+                        if (targetName && (vCourse === targetName || vRelName === targetName)) matches = true;
+                    } else {
+                        if (vCourse === sel || vRelCode === sel || vRelName === sel) matches = true;
+                    }
+
+                    if (!matches) {
                         return false;
                     }
                 }
@@ -300,14 +406,14 @@ export default {
                     const query = this.searchQuery.toLowerCase().trim();
                     const name = (voter.name || "").toLowerCase();
                     const email = (voter.email || "").toLowerCase();
-                    const course = (voter.course || "").toLowerCase();
+                    const courseText = (this.getVoterCourseText(voter) || "").toLowerCase();
                     const orgName = (voter.organization?.name || "").toLowerCase();
                     const orgCode = (voter.organization?.code || "").toLowerCase();
 
                     return (
                         name.includes(query) ||
                         email.includes(query) ||
-                        course.includes(query) ||
+                        courseText.includes(query) ||
                         orgName.includes(query) ||
                         orgCode.includes(query)
                     );
@@ -322,9 +428,16 @@ export default {
         this.loadOrganizations();
     },
     methods: {
+        getVoterCourseText(voter) {
+            if (!voter) return "—";
+            return voter.course || voter.courseRelation?.code || voter.courseRelation?.name || "—";
+        },
         async loadVoters() {
             try {
-                await this.electionStore.loadVoters();
+                const data = await this.electionStore.loadVoters();
+                if (data && (data.courses || data.enrolled_courses)) {
+                    this.courseOptions = data.courses || data.enrolled_courses;
+                }
             } catch (error) {
                 console.error("Error loading voters:", error);
             }
@@ -341,12 +454,50 @@ export default {
             this.formError = null;
             this.validationErrors = {};
             this.editingVoterId = voter.id;
+
+            const courseText = voter.course || voter.courseRelation?.code || voter.courseRelation?.name || "";
+            const matched = this.availableCourses.find((c) => {
+                if (voter.course_id && c.id === voter.course_id) return true;
+                const cCode = (c.code || "").toLowerCase().trim();
+                const cName = (c.name || "").toLowerCase().trim();
+                const target = courseText.toLowerCase().trim();
+                return target && (target === cCode || target === cName);
+            });
+
+            if (!courseText) {
+                this.editCourseSelectValue = "";
+            } else if (matched) {
+                this.editCourseSelectValue = matched.code || matched.name;
+            } else {
+                this.editCourseSelectValue = "__custom__";
+            }
+
             this.editForm = {
                 name: voter.name || "",
-                course: voter.course || "",
+                course: courseText,
+                course_id: voter.course_id ? Number(voter.course_id) : (matched && typeof matched.id === "number" ? matched.id : null),
                 organization_id: voter.organization_id ? Number(voter.organization_id) : null,
             };
             this.isEditModalOpen = true;
+        },
+        onEditCourseSelectChange() {
+            if (this.editCourseSelectValue === "__custom__") {
+                this.editForm.course_id = null;
+            } else if (!this.editCourseSelectValue) {
+                this.editForm.course = null;
+                this.editForm.course_id = null;
+            } else {
+                const selected = this.availableCourses.find(
+                    (c) => (c.code || c.name) === this.editCourseSelectValue
+                );
+                if (selected) {
+                    this.editForm.course = selected.code || selected.name;
+                    this.editForm.course_id = typeof selected.id === "number" ? selected.id : null;
+                    if (selected.organization_id && !this.editForm.organization_id) {
+                        this.editForm.organization_id = Number(selected.organization_id);
+                    }
+                }
+            }
         },
         closeEditModal() {
             this.isEditModalOpen = false;
@@ -374,6 +525,7 @@ export default {
                 const payload = {
                     name: this.editForm.name.trim(),
                     course: this.editForm.course ? this.editForm.course.trim() : null,
+                    course_id: this.editForm.course_id || null,
                     organization_id: this.editForm.organization_id ? Number(this.editForm.organization_id) : null,
                 };
 
@@ -896,6 +1048,10 @@ export default {
 .form-input:focus {
     border-color: #146c3a;
     box-shadow: 0 0 0 2px rgba(20, 108, 58, 0.15);
+}
+
+.custom-course-input {
+    margin-top: 8px;
 }
 
 .input-error {

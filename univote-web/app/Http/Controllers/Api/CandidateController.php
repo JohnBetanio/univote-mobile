@@ -37,9 +37,16 @@ class CandidateController extends Controller
         return response()->json($candidates->map(fn($c) => $this->transformCandidate($c)));
     }
 
-    public function byElection($electionId)
+    public function byElection(Request $request, $electionId)
     {
-        $election = Election::with('positions.candidates')->findOrFail($electionId);
+        $election = Election::with(['positions.candidates', 'organization', 'course'])->findOrFail($electionId);
+
+        $user = $request->user();
+        if ($user instanceof \App\Models\Voter && !$election->isEligibleVoter($user)) {
+            return response()->json([
+                'error' => 'You are not eligible to view candidates for this election.',
+            ], 403);
+        }
 
         $candidates = $election->positions->flatMap(function ($position) use ($election) {
             return $position->candidates->map(function ($candidate) use ($position, $election) {

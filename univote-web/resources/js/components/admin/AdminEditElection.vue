@@ -75,15 +75,66 @@
                             </p>
                         </div>
 
+                        <!-- Election Scope / Type Selector -->
                         <div class="form-group">
-                            <label for="organization" class="form-label">Organization</label>
-                            <select v-model="form.organization_id" id="organization" class="form-input">
-                                <option :value="null">All organizations</option>
+                            <label class="form-label"><span class="required">*</span> Election Scope</label>
+                            <div class="scope-options">
+                                <label class="scope-option" :class="{ 'scope-selected': form.election_type === 'all' }">
+                                    <input type="radio" v-model="form.election_type" value="all" @change="onScopeChange" />
+                                    <div class="scope-icon scope-icon-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253M3 12c0 .778.099 1.533.284 2.253" /></svg>
+                                    </div>
+                                    <div class="scope-text">
+                                        <span class="scope-label">Campus-Wide</span>
+                                        <span class="scope-desc">All registered voters can participate</span>
+                                    </div>
+                                </label>
+                                <label class="scope-option" :class="{ 'scope-selected': form.election_type === 'organization' }">
+                                    <input type="radio" v-model="form.election_type" value="organization" @change="onScopeChange" />
+                                    <div class="scope-icon scope-icon-org">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6.75h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" /></svg>
+                                    </div>
+                                    <div class="scope-text">
+                                        <span class="scope-label">Organization / Department</span>
+                                        <span class="scope-desc">Only voters from a specific department</span>
+                                    </div>
+                                </label>
+                                <label class="scope-option" :class="{ 'scope-selected': form.election_type === 'course' }">
+                                    <input type="radio" v-model="form.election_type" value="course" @change="onScopeChange" />
+                                    <div class="scope-icon scope-icon-course">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" /></svg>
+                                    </div>
+                                    <div class="scope-text">
+                                        <span class="scope-label">Specific Course</span>
+                                        <span class="scope-desc">Only voters enrolled in a specific course</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Organization Selector (shown when scope = organization) -->
+                        <div v-if="form.election_type === 'organization'" class="form-group scope-sub-field">
+                            <label for="organization" class="form-label"><span class="required">*</span> Select Organization</label>
+                            <select v-model="form.organization_id" id="organization" class="form-input" required>
+                                <option :value="null" disabled>— Choose an organization —</option>
                                 <option v-for="organization in organizations" :key="organization.id" :value="organization.id">
                                     {{ organization.name }} ({{ organization.code }})
                                 </option>
                             </select>
-                            <p class="form-help">Only voters from this organization can vote when selected.</p>
+                            <p class="form-help">Only voters belonging to this organization can vote in this election.</p>
+                        </div>
+
+                        <!-- Course Selector (shown when scope = course) -->
+                        <div v-if="form.election_type === 'course'" class="form-group scope-sub-field">
+                            <label for="course" class="form-label"><span class="required">*</span> Select Course</label>
+                            <select v-model="form.course_id" id="course" class="form-input" required>
+                                <option :value="null" disabled>— Choose a course —</option>
+                                <option v-for="course in courses" :key="course.id" :value="course.id">
+                                    {{ course.name }} ({{ course.code }})
+                                </option>
+                            </select>
+                            <p class="form-help">Only voters enrolled in this course can vote. Organization is automatically determined by the course assignment.</p>
+                            <p v-if="courses.length === 0" class="form-help scope-warn">⚠ No courses available.</p>
                         </div>
                     </section>
 
@@ -277,12 +328,15 @@ export default {
             form: {
                 title: "",
                 description: "",
+                election_type: "all",
                 organization_id: null,
+                course_id: null,
                 positions: [],
             },
             loading: true,
             updating: false,
             organizations: [],
+            courses: [],
         };
     },
     mounted() {
@@ -302,11 +356,22 @@ export default {
                     return;
                 }
 
+                if (response.courses || response.enrolled_courses) {
+                    this.courses = response.courses || response.enrolled_courses;
+                }
+                if (response.organizations) {
+                    this.organizations = response.organizations;
+                }
+
+                const electionType = this.election.election_type || (this.election.course_id ? 'course' : (this.election.organization_id ? 'organization' : 'all'));
+
                 // Initialize form with election data
                 this.form = {
                     title: this.election.title || "",
                     description: this.election.description || "",
+                    election_type: electionType,
                     organization_id: this.election.organization_id || null,
+                    course_id: this.election.course_id || null,
                     positions: this.election.positions
                         ? this.election.positions.map((position) => ({
                               name: position.name,
@@ -334,8 +399,25 @@ export default {
             }
         },
         async loadOrganizations() {
-            const response = await adminAPI.getOrganizations();
-            this.organizations = response.data.organizations || [];
+            try {
+                const response = await adminAPI.getOrganizations();
+                if (response.data.organizations) {
+                    this.organizations = response.data.organizations;
+                }
+                if (response.data.courses && this.courses.length === 0) {
+                    this.courses = response.data.courses;
+                }
+            } catch (err) {
+                console.error("Error loading organizations/courses:", err);
+            }
+        },
+        onScopeChange() {
+            if (this.form.election_type === 'all') {
+                this.form.organization_id = null;
+                this.form.course_id = null;
+            } else if (this.form.election_type === 'organization') {
+                this.form.course_id = null;
+            }
         },
         addPosition() {
             this.form.positions.push({
@@ -356,6 +438,16 @@ export default {
         async updateElection() {
             if (!this.form.title) {
                 this.showError("Please enter election title");
+                return;
+            }
+
+            if (this.form.election_type === 'organization' && !this.form.organization_id) {
+                this.showError("Please select an organization for this election");
+                return;
+            }
+
+            if (this.form.election_type === 'course' && !this.form.course_id) {
+                this.showError("Please select a course for this election");
                 return;
             }
 
@@ -391,7 +483,9 @@ export default {
                 const formData = {
                     title: this.form.title,
                     description: this.form.description,
-                    organization_id: this.form.organization_id,
+                    election_type: this.form.election_type,
+                    organization_id: this.form.election_type === 'organization' ? this.form.organization_id : (this.form.election_type === 'course' ? this.form.organization_id : null),
+                    course_id: this.form.election_type === 'course' ? this.form.course_id : null,
                     positions: this.form.positions
                         .map((p) => ({
                             name: p.name,
@@ -997,5 +1091,77 @@ form {
         width: 100%;
         justify-content: center;
     }
+}
+
+/* ==================== Election Scope Selector ==================== */
+.scope-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+    .scope-options { grid-template-columns: 1fr; }
+}
+
+.scope-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border: 2px solid #e8e8e8;
+    border-radius: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: #fafafa;
+    position: relative;
+}
+
+.scope-option input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    width: 0; height: 0;
+}
+
+.scope-option:hover {
+    border-color: #116b27;
+    background: #f0fdf4;
+}
+
+.scope-selected {
+    border-color: #116b27 !important;
+    background: #f0fdf4 !important;
+    box-shadow: 0 0 0 3px rgba(17, 107, 39, 0.12);
+}
+
+.scope-icon {
+    width: 36px; height: 36px;
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+
+.scope-icon svg { width: 20px; height: 20px; }
+
+.scope-icon-all    { background: #e3f2fd; color: #1565c0; }
+.scope-icon-org    { background: #f3e5f5; color: #7b1fa2; }
+.scope-icon-course { background: #e8f5e9; color: #2e7d32; }
+
+.scope-text { display: flex; flex-direction: column; gap: 3px; }
+.scope-label { font-size: 13px; font-weight: 700; color: #1a1a1a; }
+.scope-desc  { font-size: 11px; color: #888; line-height: 1.4; }
+
+.scope-sub-field {
+    background: #f8fffe;
+    border: 1.5px solid #d1fae5;
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-top: 16px;
+}
+
+.scope-warn {
+    color: #b45309 !important;
+    font-style: normal !important;
 }
 </style>

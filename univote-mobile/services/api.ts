@@ -140,6 +140,18 @@ interface Election {
   end_date?: string;
   candidates?: Candidate[];
   organization_id?: number | null;
+  election_type?: "all" | "organization" | "course";
+  course_id?: number | null;
+  course?: {
+    id: number;
+    name: string;
+    code?: string;
+  } | null;
+  organization?: {
+    id: number;
+    name: string;
+    code?: string;
+  } | null;
 }
 
 interface Organization {

@@ -815,6 +815,14 @@ export default function VoterVoteScreen() {
 
                 {/* Card Meta Row */}
                 <View style={styles.cardMetaRow}>
+                  {e.election_type === 'course' && (e.course?.code || e.course?.name) ? (
+                    <View style={[styles.metaBadge, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                      <Ionicons name="school-outline" size={12} color="#2563EB" />
+                      <Text style={[styles.metaBadgeText, { color: '#1D4ED8', fontWeight: '700' }]}>
+                        {e.course?.code || e.course?.name}
+                      </Text>
+                    </View>
+                  ) : null}
                   <View style={styles.metaBadge}>
                     <Ionicons name="people-outline" size={12} color="#6B7280" />
                     <Text style={styles.metaBadgeText}>{candidateCount} Candidate{candidateCount !== 1 ? 's' : ''}</Text>

@@ -111,8 +111,24 @@
                 </select>
             </div>
 
-            <!-- Organization Filter -->
+            <!-- Scope Filter -->
             <div class="toolbar-group">
+                <label for="scopeFilterSelector" class="toolbar-label">
+                    <svg class="label-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
+                    </svg>
+                    Filter Scope:
+                </label>
+                <select id="scopeFilterSelector" v-model="selectedScopeFilter" class="toolbar-select">
+                    <option value="all">All Scopes</option>
+                    <option value="campus">Campus-Wide</option>
+                    <option value="organization">By Organization</option>
+                    <option value="course">By Course</option>
+                </select>
+            </div>
+
+            <!-- Organization Filter -->
+            <div v-if="selectedScopeFilter !== 'course'" class="toolbar-group">
                 <label for="orgFilterSelector" class="toolbar-label">
                     <svg class="label-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 21v-8.25M15.75 21v-8.25M8.25 21v-8.25M3 9l9-6 9 6m-1.5 12V10.332A48.315 48.315 0 0 0 12 9.75c-2.551 0-5.056.2-7.5.582V21M3 21h18M12 6.75h.008v.008H12V6.75Z" />
@@ -125,6 +141,22 @@
                         {{ org.name }} ({{ org.code }}) - {{ countElectionsForOrg(org.id) }}
                     </option>
                     <option value="general">University-wide / General ({{ countGeneralElections }})</option>
+                </select>
+            </div>
+
+            <!-- Course Filter -->
+            <div v-if="selectedScopeFilter === 'course' || (availableCourses.length > 0 && selectedCourseFilter !== 'all')" class="toolbar-group">
+                <label for="courseFilterSelector" class="toolbar-label">
+                    <svg class="label-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
+                    </svg>
+                    Filter Course:
+                </label>
+                <select id="courseFilterSelector" v-model="selectedCourseFilter" class="toolbar-select">
+                    <option value="all">All Courses</option>
+                    <option v-for="c in availableCourses" :key="c.id" :value="c.id">
+                        {{ c.name }} ({{ c.code }})
+                    </option>
                 </select>
             </div>
 
@@ -270,6 +302,27 @@
                                 <span class="meta-sep">&bull;</span>
                                 <span class="meta-item">
                                     <strong>Created:</strong> {{ formatDateTime(election.created_at_formatted || election.created_at) }}
+                                </span>
+                            </div>
+
+                            <div class="scope-pill-row">
+                                <span v-if="election.election_type === 'course' || election.course" class="scope-pill scope-pill-course">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M10.394 2.08a1 1 0 0 0-.788 0l-7 3a1 1 0 0 0 0 1.84L5.25 8.051a10.99 10.99 0 0 0-.25 2.31c0 .61.057 1.206.166 1.783L3.106 13.08a1 1 0 0 0 0 1.84l7 3a1 1 0 0 0 .788 0l7-3a1 1 0 0 0 0-1.84l-2.06-1.02a11.025 11.025 0 0 0 .166-1.783c0-.79-.088-1.56-.25-2.31l2.644-1.131a1 1 0 0 0 0-1.84l-7-3Z" />
+                                    </svg>
+                                    Course: {{ election.course ? (election.course.code || election.course.name) : 'Specific Course' }}
+                                </span>
+                                <span v-else-if="election.organization" class="scope-pill scope-pill-org">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M4 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a1 1 0 1 1 0 2h-3a1 1 0 0 1-1-1v-2a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v2a1 1 0 0 1-1 1H4a1 1 0 1 1 0-2V4Zm3 1h2v2H7V5Zm2 4H7v2h2V9Zm2-4h2v2h-2V5Zm2 4h-2v2h2V9Z" />
+                                    </svg>
+                                    Org: {{ election.organization.code || election.organization.name }}
+                                </span>
+                                <span v-else class="scope-pill scope-pill-global">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM4.205 11.5a5.955 5.955 0 0 1-.2-1.5c0-.508.063-1.002.182-1.478l4.475 2.237a.5.5 0 0 1 .274.453v3.743a5.98 5.98 0 0 1-4.731-3.455ZM10 17.94V14.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H11a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 .5-.5h1.5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 1 .5-.5h1.341c.21 0 .408.1.536.265l1.621 2.08A5.982 5.982 0 0 1 10 17.94ZM16.326 9H15a.5.5 0 0 1-.5-.5V7a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 1-.5-.5V4.707a5.98 5.98 0 0 1 4.826 4.293Z" />
+                                    </svg>
+                                    Campus-Wide
                                 </span>
                             </div>
                         </div>
@@ -439,7 +492,13 @@
                 <div class="archive-card-banner">
                     <div class="banner-left">
                         <span
-                            v-if="election.organization"
+                            v-if="election.election_type === 'course' || election.course"
+                            class="org-pill-badge org-course"
+                        >
+                            Course: {{ election.course ? (election.course.code || election.course.name) : 'Specific Course' }}
+                        </span>
+                        <span
+                            v-else-if="election.organization"
                             class="org-pill-badge"
                             :style="{ backgroundColor: getOrgColor(election.organization) }"
                         >
@@ -491,6 +550,27 @@
                         <span class="meta-sep">&bull;</span>
                         <span class="meta-item">
                             <strong>Created:</strong> {{ formatDateTime(election.created_at_formatted || election.created_at) }}
+                        </span>
+                    </div>
+
+                    <div class="scope-pill-row">
+                        <span v-if="election.election_type === 'course' || election.course" class="scope-pill scope-pill-course">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M10.394 2.08a1 1 0 0 0-.788 0l-7 3a1 1 0 0 0 0 1.84L5.25 8.051a10.99 10.99 0 0 0-.25 2.31c0 .61.057 1.206.166 1.783L3.106 13.08a1 1 0 0 0 0 1.84l7 3a1 1 0 0 0 .788 0l7-3a1 1 0 0 0 0-1.84l-2.06-1.02a11.025 11.025 0 0 0 .166-1.783c0-.79-.088-1.56-.25-2.31l2.644-1.131a1 1 0 0 0 0-1.84l-7-3Z" />
+                            </svg>
+                            Course: {{ election.course ? (election.course.code || election.course.name) : 'Specific Course' }}
+                        </span>
+                        <span v-else-if="election.organization" class="scope-pill scope-pill-org">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M4 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a1 1 0 1 1 0 2h-3a1 1 0 0 1-1-1v-2a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v2a1 1 0 0 1-1 1H4a1 1 0 1 1 0-2V4Zm3 1h2v2H7V5Zm2 4H7v2h2V9Zm2-4h2v2h-2V5Zm2 4h-2v2h2V9Z" />
+                            </svg>
+                            Org: {{ election.organization.code || election.organization.name }}
+                        </span>
+                        <span v-else class="scope-pill scope-pill-global">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM4.205 11.5a5.955 5.955 0 0 1-.2-1.5c0-.508.063-1.002.182-1.478l4.475 2.237a.5.5 0 0 1 .274.453v3.743a5.98 5.98 0 0 1-4.731-3.455ZM10 17.94V14.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H11a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 .5-.5h1.5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 1 .5-.5h1.341c.21 0 .408.1.536.265l1.621 2.08A5.982 5.982 0 0 1 10 17.94ZM16.326 9H15a.5.5 0 0 1-.5-.5V7a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 1-.5-.5V4.707a5.98 5.98 0 0 1 4.826 4.293Z" />
+                            </svg>
+                            Campus-Wide
                         </span>
                     </div>
                 </div>
@@ -702,7 +782,9 @@ export default {
     data() {
         return {
             searchQuery: "",
+            selectedScopeFilter: "all",
             selectedOrgFilter: "all",
+            selectedCourseFilter: "all",
             sortBy: "org_asc", // default: sort by org per user request
             viewMode: "grouped", // 'grouped' by org, or 'list'
             organizationOptions: [],
@@ -725,8 +807,17 @@ export default {
             });
             return Object.values(orgMap).sort((a, b) => a.name.localeCompare(b.name));
         },
+        availableCourses() {
+            const courseMap = {};
+            this.results.forEach((e) => {
+                if (e.course && e.course.id) {
+                    courseMap[e.course.id] = e.course;
+                }
+            });
+            return Object.values(courseMap).sort((a, b) => (a.code || a.name).localeCompare(b.code || b.name));
+        },
         countGeneralElections() {
-            return this.results.filter((e) => !e.organization_id).length;
+            return this.results.filter((e) => !e.organization_id && !e.course_id).length;
         },
         totalVotersParticipated() {
             return this.results.reduce((sum, e) => sum + (e.total_voters_who_voted || 0), 0);
@@ -740,14 +831,30 @@ export default {
         filteredResults() {
             let list = [...this.results];
 
-            // 1. Organization filter
+            // 1. Scope filter
+            if (this.selectedScopeFilter !== "all") {
+                if (this.selectedScopeFilter === "campus") {
+                    list = list.filter((e) => e.election_type === "all" || (!e.organization_id && !e.course_id));
+                } else if (this.selectedScopeFilter === "organization") {
+                    list = list.filter((e) => e.election_type === "organization" || (e.organization_id && !e.course_id));
+                } else if (this.selectedScopeFilter === "course") {
+                    list = list.filter((e) => e.election_type === "course" || e.course_id);
+                }
+            }
+
+            // 2. Organization filter
             if (this.selectedOrgFilter === "general") {
-                list = list.filter((e) => !e.organization_id);
+                list = list.filter((e) => !e.organization_id && !e.course_id);
             } else if (this.selectedOrgFilter !== "all") {
                 list = list.filter((e) => Number(e.organization_id) === Number(this.selectedOrgFilter));
             }
 
-            // 2. Search query filter
+            // 3. Course filter
+            if (this.selectedCourseFilter !== "all") {
+                list = list.filter((e) => Number(e.course_id) === Number(this.selectedCourseFilter) || (e.course && Number(e.course.id) === Number(this.selectedCourseFilter)));
+            }
+
+            // 4. Search query filter
             if (this.searchQuery.trim()) {
                 const q = this.searchQuery.trim().toLowerCase();
                 list = list.filter((e) => {
@@ -755,6 +862,8 @@ export default {
                     const matchDesc = (e.description || "").toLowerCase().includes(q);
                     const matchOrg = (e.organization?.name || "").toLowerCase().includes(q) ||
                                      (e.organization?.code || "").toLowerCase().includes(q);
+                    const matchCourse = (e.course?.name || "").toLowerCase().includes(q) ||
+                                        (e.course?.code || "").toLowerCase().includes(q);
 
                     // Also search candidates & positions
                     const matchPositions = (e.positions || []).some((p) =>
@@ -762,11 +871,11 @@ export default {
                         (p.candidates || []).some((c) => c.name.toLowerCase().includes(q))
                     );
 
-                    return matchTitle || matchDesc || matchOrg || matchPositions;
+                    return matchTitle || matchDesc || matchOrg || matchCourse || matchPositions;
                 });
             }
 
-            // 3. Sorting (Sort by organization by default!)
+            // 5. Sorting (Sort by organization by default!)
             list.sort((a, b) => {
                 if (this.sortBy === "org_asc" || this.sortBy === "org_desc") {
                     const nameA = a.organization?.name ? a.organization.name.toLowerCase() : "zzz_general";
@@ -911,7 +1020,9 @@ export default {
         },
         resetFilters() {
             this.searchQuery = "";
+            this.selectedScopeFilter = "all";
             this.selectedOrgFilter = "all";
+            this.selectedCourseFilter = "all";
             this.sortBy = "org_asc";
         },
         formatDateTime(dateStr) {
@@ -2113,5 +2224,46 @@ export default {
     .page-header {
         padding: 24px 20px;
     }
+}
+
+/* ==================== Scope Pills ==================== */
+.scope-pill-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+.scope-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+.scope-pill svg {
+    width: 13px;
+    height: 13px;
+}
+.scope-pill-course {
+    background: #ede9fe;
+    color: #6d28d9;
+    border: 1px solid #ddd6fe;
+}
+.scope-pill-org {
+    background: #e0f2fe;
+    color: #0369a1;
+    border: 1px solid #bae6fd;
+}
+.scope-pill-global {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+}
+.org-course {
+    background: #7c3aed !important;
 }
 </style>

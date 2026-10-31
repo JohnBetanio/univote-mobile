@@ -543,7 +543,7 @@ export default function GoogleSetupScreen() {
               {/* 4. College Department Dropdown */}
               <View style={styles.field}>
                 <Text style={styles.label}>
-                  Organization <Text style={styles.requiredStar}>*</Text>
+                  Department / Organization <Text style={styles.requiredStar}>*</Text>
                 </Text>
                 {organizationsLoading ? (
                   <View style={[styles.inputContainer, styles.loadingInput]}>

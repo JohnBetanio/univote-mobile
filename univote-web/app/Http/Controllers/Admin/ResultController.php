@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Course;
 use App\Models\Election;
+use App\Models\Organization;
 use App\Models\Voter;
 use Illuminate\Http\Request;
 
@@ -16,7 +18,7 @@ class ResultController extends Controller
         }
 
         // Only query finished elections (exclude draft, upcoming, active, cancelled)
-        $query = Election::with(['organization', 'positions.candidates.votes', 'votes'])
+        $query = Election::with(['organization', 'course', 'positions.candidates.votes', 'votes'])
             ->where(function ($q) {
                 $q->whereIn('status', ['ended', 'closed'])
                     ->orWhere(function ($sub) {
@@ -26,13 +28,42 @@ class ResultController extends Controller
                     });
             });
 
+        // Scope filter
+        if ($request->filled('scope') && $request->query('scope') !== 'all') {
+            $scope = $request->query('scope');
+            if ($scope === 'campus') {
+                $query->where(function ($q) {
+                    $q->where('election_type', 'all')
+                      ->orWhere(function ($sub) {
+                          $sub->whereNull('organization_id')->whereNull('course_id');
+                      });
+                });
+            } elseif ($scope === 'organization') {
+                $query->where(function ($q) {
+                    $q->where('election_type', 'organization')
+                      ->orWhere(function ($sub) {
+                          $sub->whereNotNull('organization_id')->whereNull('course_id');
+                      });
+                });
+            } elseif ($scope === 'course') {
+                $query->where(function ($q) {
+                    $q->where('election_type', 'course')
+                      ->orWhereNotNull('course_id');
+                });
+            }
+        }
+
         if ($request->filled('organization_id')) {
             $orgId = $request->query('organization_id');
             if ($orgId === 'general' || $orgId === 'unassigned') {
-                $query->whereNull('organization_id');
+                $query->whereNull('organization_id')->whereNull('course_id');
             } else {
                 $query->where('organization_id', $orgId);
             }
+        }
+
+        if ($request->filled('course_id')) {
+            $query->where('course_id', $request->query('course_id'));
         }
 
         $elections = $query->latest('end_date')->latest('created_at')->get();
@@ -78,10 +109,21 @@ class ResultController extends Controller
             $totalVotersWhoVoted = $election->votes()->distinct('voter_id')->count('voter_id');
             $totalVotesCast = $election->votes()->count();
 
-            // Total eligible voters in that organization (or university-wide)
-            $totalEligibleVoters = $election->organization_id
-                ? Voter::where('organization_id', $election->organization_id)->count()
-                : Voter::count();
+            // Calculate eligible voters accurately based on scope
+            $electionType = $election->election_type ?? ($election->course_id ? 'course' : ($election->organization_id ? 'organization' : 'all'));
+            if ($electionType === 'course' || $election->course_id) {
+                $totalEligibleVoters = Voter::where('course_id', $election->course_id)->count();
+                if ($totalEligibleVoters === 0 && $election->course) {
+                    $totalEligibleVoters = Voter::where(function ($q) use ($election) {
+                        $q->where('course', $election->course->name)
+                          ->orWhere('course', $election->course->code);
+                    })->count();
+                }
+            } elseif ($election->organization_id) {
+                $totalEligibleVoters = Voter::where('organization_id', $election->organization_id)->count();
+            } else {
+                $totalEligibleVoters = Voter::count();
+            }
 
             $turnoutPercentage = $totalEligibleVoters > 0
                 ? round(($totalVotersWhoVoted / $totalEligibleVoters) * 100, 1)
@@ -115,11 +157,18 @@ class ResultController extends Controller
                 'title' => $election->title,
                 'description' => $election->description,
                 'status' => $election->status,
+                'election_type' => $electionType,
                 'organization_id' => $election->organization_id,
+                'course_id' => $election->course_id,
                 'organization' => $election->organization ? [
                     'id' => $election->organization->id,
                     'name' => $election->organization->name,
                     'code' => $election->organization->code,
+                ] : null,
+                'course' => $election->course ? [
+                    'id' => $election->course->id,
+                    'name' => $election->course->name,
+                    'code' => $election->course->code,
                 ] : null,
                 'created_at' => $election->created_at?->toIso8601String(),
                 'end_date' => $endedDate ? $endedDate->toIso8601String() : null,
@@ -134,14 +183,20 @@ class ResultController extends Controller
             ];
         });
 
+        $organizations = Organization::orderBy('name')->get(['id', 'name', 'code']);
+        $allCourses = Course::getAllCourses();
+
         return response()->json([
             'results' => $results,
+            'organizations' => $organizations,
+            'courses' => $allCourses,
+            'enrolled_courses' => $allCourses,
         ]);
     }
 
     public function show(Election $election)
     {
-        $election->load(['organization', 'positions.candidates.votes', 'votes']);
+        $election->load(['organization', 'course', 'positions.candidates.votes', 'votes']);
 
         $positions = $election->positions->map(function ($position) {
             $candidates = $position->candidates()->withCount('votes')->get();
@@ -163,9 +218,22 @@ class ResultController extends Controller
 
         $totalVotersWhoVoted = $election->votes()->distinct('voter_id')->count('voter_id');
         $totalVotesCast = $election->votes()->count();
-        $totalEligibleVoters = $election->organization_id
-            ? Voter::where('organization_id', $election->organization_id)->count()
-            : Voter::count();
+
+        $electionType = $election->election_type ?? ($election->course_id ? 'course' : ($election->organization_id ? 'organization' : 'all'));
+        if ($electionType === 'course' || $election->course_id) {
+            $totalEligibleVoters = Voter::where('course_id', $election->course_id)->count();
+            if ($totalEligibleVoters === 0 && $election->course) {
+                $totalEligibleVoters = Voter::where(function ($q) use ($election) {
+                    $q->where('course', $election->course->name)
+                      ->orWhere('course', $election->course->code);
+                })->count();
+            }
+        } elseif ($election->organization_id) {
+            $totalEligibleVoters = Voter::where('organization_id', $election->organization_id)->count();
+        } else {
+            $totalEligibleVoters = Voter::count();
+        }
+
         $turnoutPercentage = $totalEligibleVoters > 0
             ? round(($totalVotersWhoVoted / $totalEligibleVoters) * 100, 1)
             : 0.0;
@@ -198,11 +266,18 @@ class ResultController extends Controller
                 'title' => $election->title,
                 'description' => $election->description,
                 'status' => $election->status,
+                'election_type' => $electionType,
                 'organization_id' => $election->organization_id,
+                'course_id' => $election->course_id,
                 'organization' => $election->organization ? [
                     'id' => $election->organization->id,
                     'name' => $election->organization->name,
                     'code' => $election->organization->code,
+                ] : null,
+                'course' => $election->course ? [
+                    'id' => $election->course->id,
+                    'name' => $election->course->name,
+                    'code' => $election->course->code,
                 ] : null,
                 'created_at' => $election->created_at?->toIso8601String(),
                 'end_date' => $endedDate ? $endedDate->toIso8601String() : null,

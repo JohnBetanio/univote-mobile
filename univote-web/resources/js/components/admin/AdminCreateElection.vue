@@ -113,9 +113,19 @@
                                     {{ course.name }} ({{ course.code }})
                                 </option>
                             </optgroup>
+                            <optgroup v-if="unassignedCourses.length > 0" label="Other / Unassigned Courses">
+                                <option v-for="course in unassignedCourses" :key="course.id" :value="course.id">
+                                    {{ course.name }} ({{ course.code }})
+                                </option>
+                            </optgroup>
+                            <template v-if="organizationsWithCourses.length === 0 && unassignedCourses.length === 0">
+                                <option v-for="course in courses" :key="course.id" :value="course.id">
+                                    {{ course.name }} ({{ course.code }})
+                                </option>
+                            </template>
                         </select>
                         <p class="form-help">Only voters enrolled in this course can vote. Organization is automatically determined by the course assignment.</p>
-                        <p v-if="courses.length === 0" class="form-help scope-warn">⚠ No assigned courses available. Please assign courses to organizations first.</p>
+                        <p v-if="courses.length === 0" class="form-help scope-warn">⚠ No courses available.</p>
                     </div>
                 </section>
 
@@ -323,13 +333,19 @@ export default {
                 }))
                 .filter(org => org.courses.length > 0);
         },
+        unassignedCourses() {
+            return this.courses.filter(c => !c.organization_id);
+        },
     },
     async mounted() {
         const response = await adminAPI.getOrganizations();
         const orgs = response.data.organizations || [];
         this.organizations = orgs;
-        // Flatten all courses from orgs (already loaded with courses)
-        this.courses = orgs.flatMap(o => (o.courses || []).map(c => ({ ...c, organization_id: o.id })));
+        if (response.data.courses && response.data.courses.length > 0) {
+            this.courses = response.data.courses;
+        } else {
+            this.courses = orgs.flatMap(o => (o.courses || []).map(c => ({ ...c, organization_id: o.id })));
+        }
     },
     methods: {
         onScopeChange() {

@@ -11,6 +11,7 @@ export const useElectionStore = defineStore("election", () => {
     const resultsAvailable = ref(true);
     const announcements = ref([]);
     const announcementOrganizations = ref([]);
+    const announcementCourses = ref([]);
     const isLoading = ref(false);
     const error = ref(null);
     const electionStatus = ref(null);
@@ -204,6 +205,9 @@ export const useElectionStore = defineStore("election", () => {
             if (response.data.organizations) {
                 announcementOrganizations.value = response.data.organizations;
             }
+            if (response.data.courses || response.data.enrolled_courses) {
+                announcementCourses.value = response.data.courses || response.data.enrolled_courses;
+            }
             return response.data;
         } catch (err) {
             error.value =
@@ -349,6 +353,7 @@ export const useElectionStore = defineStore("election", () => {
         resultsAvailable,
         announcements,
         announcementOrganizations,
+        announcementCourses,
         voters,
         isLoading,
         error,

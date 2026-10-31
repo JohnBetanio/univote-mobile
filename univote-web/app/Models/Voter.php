@@ -46,6 +46,21 @@ class Voter extends Authenticatable
         'avatar_url',
     ];
 
+    protected static function booted()
+    {
+        static::saving(function ($voter) {
+            if (!empty($voter->course) && $voter->course !== 'Not Specified' && empty($voter->course_id)) {
+                $course = Course::resolveForVoter($voter->course, $voter->organization_id);
+                if ($course) {
+                    $voter->course_id = $course->id;
+                    if (empty($voter->organization_id) && $course->organization_id) {
+                        $voter->organization_id = $course->organization_id;
+                    }
+                }
+            }
+        });
+    }
+
     /**
      * Full URL for voter's avatar / profile picture.
      */

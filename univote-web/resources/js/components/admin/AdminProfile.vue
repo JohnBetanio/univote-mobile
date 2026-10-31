@@ -8,14 +8,34 @@
             </div>
         </transition>
 
+        <header class="profile-page-header">
+            <div>
+                <p class="page-eyebrow">ACCOUNT SETTINGS</p>
+                <h1 class="page-title">Profile &amp; security</h1>
+                <p class="page-description">
+                    Manage your administrator details and keep your account secure.
+                </p>
+            </div>
+            <span class="account-badge">
+                <span class="account-badge-dot"></span>
+                Administrator account
+            </span>
+        </header>
+
         <div class="profile-grid">
             <!-- Left Column: Avatar Card -->
             <div class="profile-card avatar-card">
                 <div class="card-header">
                     <h3 class="card-title">Profile Picture</h3>
+                    <p class="card-description">Choose a photo that helps your team recognize you.</p>
                 </div>
                 <div class="card-body avatar-body">
-                    <div class="avatar-wrapper" @click="triggerFileInput">
+                    <button
+                        type="button"
+                        class="avatar-wrapper"
+                        aria-label="Choose a new profile picture"
+                        @click="triggerFileInput"
+                    >
                         <img
                             v-if="previewUrl || admin.profile_picture_url"
                             :src="previewUrl || admin.profile_picture_url"
@@ -27,17 +47,20 @@
                         </div>
                         <div class="avatar-overlay">
                             <span class="overlay-icon">📷</span>
-                            <span class="overlay-text">Change</span>
+                            <span class="overlay-text">Change photo</span>
                         </div>
-                    </div>
+                    </button>
                     <input
                         ref="fileInput"
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
                         class="hidden-input"
+                        aria-label="Upload a profile picture"
                         @change="onFileSelected"
                     />
-                    <p class="avatar-hint">Click to upload a new picture</p>
+                    <p class="avatar-name">{{ admin.name || "Administrator" }}</p>
+                    <p class="avatar-email">{{ admin.email }}</p>
+                    <p class="avatar-hint">Select a photo to update your profile</p>
                     <p class="avatar-hint-sub">JPG, PNG or WebP • Max 2 MB</p>
                     <transition name="fade">
                         <div v-if="selectedFile" class="avatar-actions">
@@ -66,6 +89,7 @@
                 <div class="profile-card">
                     <div class="card-header">
                         <h3 class="card-title">Profile Information</h3>
+                        <p class="card-description">Your name is shown to other administrators.</p>
                     </div>
                     <div class="card-body">
                         <form @submit.prevent="saveProfile">
@@ -78,8 +102,12 @@
                                     class="form-input"
                                     placeholder="Your name"
                                     required
+                                    maxlength="255"
+                                    autocomplete="name"
+                                    :aria-invalid="Boolean(errors.name)"
+                                    :aria-describedby="errors.name ? 'admin-name-error' : undefined"
                                 />
-                                <p v-if="errors.name" class="field-error">{{ errors.name[0] }}</p>
+                                <p v-if="errors.name" id="admin-name-error" class="field-error">{{ errors.name[0] }}</p>
                             </div>
                             <div class="form-group">
                                 <label for="admin-email">Email</label>
@@ -89,6 +117,7 @@
                                     id="admin-email"
                                     class="form-input"
                                     disabled
+                                    autocomplete="email"
                                 />
                                 <p class="field-hint">Email cannot be changed</p>
                             </div>
@@ -100,9 +129,9 @@
                                 <button
                                     type="submit"
                                     class="btn btn-primary"
-                                    :disabled="savingProfile || form.name === admin.name"
+                                    :disabled="savingProfile || !profileChanged"
                                 >
-                                    {{ savingProfile ? 'Saving…' : 'Update Name' }}
+                                    {{ savingProfile ? 'Saving…' : 'Save changes' }}
                                 </button>
                             </div>
                         </form>
@@ -113,8 +142,12 @@
                 <div class="profile-card">
                     <div class="card-header">
                         <h3 class="card-title">Change Password</h3>
+                        <p class="card-description">Update your password to help protect your administrator account.</p>
                     </div>
                     <div class="card-body">
+                        <div class="security-note">
+                            Use at least 6 characters and avoid reusing a password from another account.
+                        </div>
                         <form @submit.prevent="changePassword">
                             <div class="form-group">
                                 <label for="current-password">Current Password</label>
@@ -126,13 +159,15 @@
                                         class="form-input"
                                         placeholder="Enter current password"
                                         required
+                                        autocomplete="current-password"
                                     />
                                     <button
                                         type="button"
                                         class="password-toggle"
                                         @click="showCurrentPassword = !showCurrentPassword"
+                                        :aria-label="showCurrentPassword ? 'Hide current password' : 'Show current password'"
                                     >
-                                        {{ showCurrentPassword ? '' : '' }}
+                                        {{ showCurrentPassword ? 'Hide' : 'Show' }}
                                     </button>
                                 </div>
                                 <p v-if="passwordErrors.current_password" class="field-error">{{ passwordErrors.current_password[0] }}</p>
@@ -148,13 +183,15 @@
                                         placeholder="Minimum 6 characters"
                                         required
                                         minlength="6"
+                                        autocomplete="new-password"
                                     />
                                     <button
                                         type="button"
                                         class="password-toggle"
                                         @click="showNewPassword = !showNewPassword"
+                                        :aria-label="showNewPassword ? 'Hide new password' : 'Show new password'"
                                     >
-                                        {{ showNewPassword ? '' : '' }}
+                                        {{ showNewPassword ? 'Hide' : 'Show' }}
                                     </button>
                                 </div>
                                 <p v-if="passwordErrors.password" class="field-error">{{ passwordErrors.password[0] }}</p>
@@ -169,13 +206,15 @@
                                         class="form-input"
                                         placeholder="Re-enter new password"
                                         required
+                                        autocomplete="new-password"
                                     />
                                     <button
                                         type="button"
                                         class="password-toggle"
                                         @click="showConfirmPassword = !showConfirmPassword"
+                                        :aria-label="showConfirmPassword ? 'Hide password confirmation' : 'Show password confirmation'"
                                     >
-                                        {{ showConfirmPassword ? '' : '' }}
+                                        {{ showConfirmPassword ? 'Hide' : 'Show' }}
                                     </button>
                                 </div>
                                 <p v-if="passwordMismatch" class="field-error">Passwords do not match</p>
@@ -183,7 +222,7 @@
                             <div class="form-actions">
                                 <button
                                     type="submit"
-                                    class="btn btn-warning"
+                                    class="btn btn-primary"
                                     :disabled="changingPassword || !passwordFormValid"
                                 >
                                     {{ changingPassword ? 'Changing…' : 'Change Password' }}
@@ -243,6 +282,9 @@ export default {
         adminInitial() {
             return (this.admin.name || "A").trim().charAt(0).toUpperCase();
         },
+        profileChanged() {
+            return this.form.name.trim() !== (this.admin.name || "");
+        },
         passwordMismatch() {
             return (
                 this.passwordForm.password &&
@@ -298,14 +340,17 @@ export default {
 
             // Validate client-side
             if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+                this.cancelPicture();
                 this.showToast("Please select a JPG, PNG, or WebP image.", "error");
                 return;
             }
             if (file.size > 2 * 1024 * 1024) {
+                this.cancelPicture();
                 this.showToast("Image must be smaller than 2 MB.", "error");
                 return;
             }
 
+            if (this.previewUrl) URL.revokeObjectURL(this.previewUrl);
             this.selectedFile = file;
             this.previewUrl = URL.createObjectURL(file);
         },
@@ -411,6 +456,57 @@ export default {
     position: relative;
 }
 
+.profile-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.page-eyebrow {
+    margin: 0 0 7px;
+    color: #146c3a;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+}
+
+.page-title {
+    margin: 0;
+    color: #1a2e22;
+    font-size: 26px;
+    font-weight: 750;
+    letter-spacing: -0.035em;
+}
+
+.page-description {
+    margin: 7px 0 0;
+    color: #718078;
+    font-size: 14px;
+}
+
+.account-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    padding: 9px 13px;
+    border: 1px solid #dcebe1;
+    border-radius: 999px;
+    background: #f3f8f4;
+    color: #286641;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.account-badge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #3a9a5d;
+}
+
 .profile-grid {
     display: grid;
     grid-template-columns: 320px 1fr;
@@ -446,6 +542,13 @@ export default {
     letter-spacing: -0.01em;
 }
 
+.card-description {
+    margin: 6px 0 0;
+    color: #849188;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
 .card-body {
     padding: 24px;
 }
@@ -462,16 +565,26 @@ export default {
     position: relative;
     width: 160px;
     height: 160px;
+    box-sizing: border-box;
+    padding: 0;
     border-radius: 50%;
-    cursor: pointer;
     overflow: hidden;
     border: 4px solid #e8f0ea;
+    background: transparent;
+    font-family: inherit;
+    cursor: pointer;
     transition: border-color 0.3s, transform 0.2s;
 }
 
-.avatar-wrapper:hover {
+.avatar-wrapper:hover,
+.avatar-wrapper:focus-visible {
     border-color: #146c3a;
     transform: scale(1.03);
+}
+
+.avatar-wrapper:focus-visible {
+    outline: 3px solid rgba(20, 108, 58, 0.2);
+    outline-offset: 3px;
 }
 
 .avatar-image {
@@ -523,10 +636,26 @@ export default {
 }
 
 .avatar-hint {
-    margin: 18px 0 4px;
+    margin: 16px 0 4px;
     font-size: 13px;
     color: #5a6b60;
     font-weight: 500;
+}
+
+.avatar-name {
+    margin: 18px 0 3px;
+    color: #1a2e22;
+    font-size: 18px;
+    font-weight: 750;
+    text-align: center;
+}
+
+.avatar-email {
+    margin: 0;
+    color: #718078;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+    text-align: center;
 }
 
 .avatar-hint-sub {
@@ -614,21 +743,41 @@ export default {
 
 .password-toggle {
     position: absolute;
-    right: 4px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 18px;
-    padding: 6px 8px;
+    color: #146c3a;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px;
     line-height: 1;
-    opacity: 0.6;
-    transition: opacity 0.2s;
+    border-radius: 4px;
+    transition: background 0.2s;
 }
 
-.password-toggle:hover {
-    opacity: 1;
+.password-toggle:hover,
+.password-toggle:focus-visible {
+    background: #edf5ef;
+}
+
+.password-toggle:focus-visible {
+    outline: 2px solid #146c3a;
+    outline-offset: 1px;
+}
+
+.security-note {
+    margin-bottom: 22px;
+    padding: 12px 14px;
+    border: 1px solid #dcebe1;
+    border-radius: 8px;
+    background: #f5f9f6;
+    color: #50675a;
+    font-size: 12px;
+    line-height: 1.5;
 }
 
 /* ── Buttons ── */
@@ -755,6 +904,12 @@ export default {
 
 /* ── Responsive ── */
 @media (max-width: 820px) {
+    .profile-page-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 14px;
+    }
+
     .profile-grid {
         grid-template-columns: 1fr;
     }

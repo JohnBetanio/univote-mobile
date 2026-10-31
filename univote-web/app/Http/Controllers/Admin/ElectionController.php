@@ -24,6 +24,13 @@ class ElectionController extends Controller
             $query->whereNotIn('status', ['ended', 'closed']);
         }
 
+        if (request()->filled('election_type') && request('election_type') !== 'all_scopes') {
+            $query->where('election_type', request('election_type'));
+        }
+        if (request()->filled('course_id')) {
+            $query->where('course_id', request('course_id'));
+        }
+
         $elections = $query->latest('created_at')->get();
 
         $electionsData = $elections->map(function ($election) {
@@ -53,23 +60,34 @@ class ElectionController extends Controller
             ];
         });
 
-        // Also return organizations and courses for selectors
+        // Also return organizations and all courses for selectors
         $organizations = \App\Models\Organization::orderBy('name')->get(['id', 'name', 'code']);
-        $courses       = Course::whereNotNull('organization_id')
-            ->with('organization:id,name,code')
-            ->orderBy('name')
-            ->get(['id', 'name', 'code', 'organization_id']);
+        $allCourses    = Course::getAllCourses();
 
         return response()->json([
-            'elections'     => $electionsData,
-            'organizations' => $organizations,
-            'courses'       => $courses,
+            'elections'        => $electionsData,
+            'organizations'    => $organizations,
+            'courses'          => $allCourses,
+            'enrolled_courses' => $allCourses,
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
-        return view('index');
+        if (! $request->expectsJson()) {
+            return view('index');
+        }
+
+        $allCourses    = Course::getAllCourses();
+        $organizations = \App\Models\Organization::with(['courses' => function ($q) {
+            $q->withCount('voters')->orderBy('name');
+        }])->orderBy('name')->get(['id', 'name', 'code']);
+
+        return response()->json([
+            'organizations'    => $organizations,
+            'courses'          => $allCourses,
+            'enrolled_courses' => $allCourses,
+        ]);
     }
 
     public function store(Request $request)
@@ -92,20 +110,14 @@ class ElectionController extends Controller
             'positions.*.candidates.*'         => 'required|string|max:255',
         ]);
 
-        // When course election, derive organization from course
+        // When course election, derive organization from course or enrolled voters
         $organizationId = $request->organization_id;
         $courseId       = null;
 
         if ($electionType === 'course') {
             $course         = Course::findOrFail($request->course_id);
             $courseId       = $course->id;
-            $organizationId = $course->organization_id;
-
-            if (! $organizationId) {
-                return response()->json([
-                    'message' => 'Selected course has not been assigned to an organization yet.',
-                ], 422);
-            }
+            $organizationId = $course->organization_id ?: ($request->organization_id ?: $course->voters()->whereNotNull('organization_id')->value('organization_id'));
         }
 
         if ($electionType === 'all') {
@@ -156,15 +168,13 @@ class ElectionController extends Controller
         $election->load(['positions.candidates', 'organization', 'course']);
 
         $organizations = \App\Models\Organization::orderBy('name')->get(['id', 'name', 'code']);
-        $courses       = Course::whereNotNull('organization_id')
-            ->with('organization:id,name,code')
-            ->orderBy('name')
-            ->get(['id', 'name', 'code', 'organization_id']);
+        $allCourses    = Course::getAllCourses();
 
         return response()->json([
-            'election'      => $election,
-            'organizations' => $organizations,
-            'courses'       => $courses,
+            'election'         => $election,
+            'organizations'    => $organizations,
+            'courses'          => $allCourses,
+            'enrolled_courses' => $allCourses,
         ]);
     }
 
@@ -201,7 +211,7 @@ class ElectionController extends Controller
         if ($electionType === 'course') {
             $course         = Course::findOrFail($request->course_id);
             $courseId       = $course->id;
-            $organizationId = $course->organization_id;
+            $organizationId = $course->organization_id ?: ($request->organization_id ?: $course->voters()->whereNotNull('organization_id')->value('organization_id'));
         }
 
         if ($electionType === 'all') {

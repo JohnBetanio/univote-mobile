@@ -67,14 +67,20 @@ class VoteController extends Controller
             return response()->json(['error' => $validator->errors()], 422);
         }
 
-        $election = Election::with('positions.candidates')->findOrFail($request->election_id);
+        $election = Election::with(['positions.candidates', 'organization', 'course'])->findOrFail($request->election_id);
 
         if ($election->status !== 'active') {
             return response()->json(['error' => 'This election is not active'], 403);
         }
 
-        if ($election->organization_id && $election->organization_id !== $user->organization_id) {
-            return response()->json(['error' => 'You are not eligible to vote in this organization election.'], 403);
+        if (!$election->isEligibleVoter($user)) {
+            $requiredScope = $election->isCourseScoped()
+                ? ($election->course?->code ?: $election->course?->name ?: 'this specific course')
+                : ($election->organization?->name ?: 'this department');
+
+            return response()->json([
+                'error' => "You are not eligible to vote in this {$requiredScope} election.",
+            ], 403);
         }
 
         $hasVoted = Vote::where('voter_id', $user->id)
@@ -185,13 +191,19 @@ class VoteController extends Controller
         $user = $request->user();
 
         if (!$user instanceof Voter) {
-            return response()->json(['has_voted' => false]);
+            return response()->json(['has_voted' => false, 'eligible' => false]);
         }
+
+        $election = Election::with(['organization', 'course'])->find($electionId);
+        $isEligible = $election ? $election->isEligibleVoter($user) : false;
 
         $hasVoted = Vote::where('voter_id', $user->id)
             ->where('election_id', $electionId)
             ->exists();
 
-        return response()->json(['has_voted' => $hasVoted]);
+        return response()->json([
+            'has_voted' => $hasVoted,
+            'eligible' => $isEligible,
+        ]);
     }
 }

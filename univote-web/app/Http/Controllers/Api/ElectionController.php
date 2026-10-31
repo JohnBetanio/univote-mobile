@@ -22,6 +22,8 @@ class ElectionController extends Controller
 
     private function transformElection($election)
     {
+        $electionType = $election->election_type ?? ($election->course_id ? 'course' : ($election->organization_id ? 'organization' : 'all'));
+
         return [
             'id' => $election->id,
             'title' => $election->title,
@@ -29,7 +31,19 @@ class ElectionController extends Controller
             'status' => $this->mapStatusToApi($election->status),
             'start_date' => $election->start_date,
             'end_date' => $election->end_date,
+            'election_type' => $electionType,
             'organization_id' => $election->organization_id,
+            'course_id' => $election->course_id,
+            'organization' => $election->organization ? [
+                'id' => $election->organization->id,
+                'name' => $election->organization->name,
+                'code' => $election->organization->code,
+            ] : null,
+            'course' => $election->course ? [
+                'id' => $election->course->id,
+                'name' => $election->course->name,
+                'code' => $election->course->code,
+            ] : null,
             'candidates' => $election->positions->flatMap(function ($position) use ($election) {
                 return $position->candidates->map(function ($candidate) use ($election, $position) {
                     return [
@@ -47,17 +61,80 @@ class ElectionController extends Controller
 
     public function index(Request $request)
     {
-        $query = Election::with('positions.candidates');
+        $query = Election::with(['positions.candidates', 'organization', 'course']);
 
         if ($request->has('status')) {
             $dbStatus = $this->mapStatusFromApi($request->status);
             $query->where('status', $dbStatus);
         }
 
-        if ($request->user() instanceof Voter) {
-            $query->where(function ($scope) use ($request) {
-                $scope->whereNull('organization_id')
-                    ->orWhere('organization_id', $request->user()->organization_id);
+        $user = $request->user();
+        if ($user instanceof Voter) {
+            // Auto-resolve course_id on the voter if missing
+            $vCourseId = $user->course_id;
+            if (!$vCourseId && !empty($user->course) && $user->course !== 'Not Specified') {
+                $resolved = \App\Models\Course::resolveForVoter($user->course, $user->organization_id);
+                if ($resolved) {
+                    $vCourseId = $resolved->id;
+                    $user->course_id = $resolved->id;
+                    if (!$user->organization_id && $resolved->organization_id) {
+                        $user->organization_id = $resolved->organization_id;
+                    }
+                    $user->saveQuietly();
+                }
+            }
+
+            $vOrgId = $user->organization_id;
+            $vCourseText = trim($user->course ?? '');
+
+            $query->where(function ($scope) use ($vOrgId, $vCourseId, $vCourseText) {
+                // 1. Campus-wide elections (accessible to all voters)
+                $scope->where(function ($allSub) {
+                    $allSub->where('election_type', 'all')
+                           ->orWhere(function ($fallbackAll) {
+                               $fallbackAll->whereNull('election_type')
+                                           ->whereNull('organization_id')
+                                           ->whereNull('course_id');
+                           });
+                });
+
+                // 2. Organization-scoped elections (accessible only to voters of that department/org)
+                if ($vOrgId) {
+                    $scope->orWhere(function ($orgSub) use ($vOrgId) {
+                        $orgSub->where('organization_id', $vOrgId)
+                               ->where(function ($typeSub) {
+                                   $typeSub->where('election_type', 'organization')
+                                           ->orWhere(function ($legacy) {
+                                               $legacy->whereNull('election_type')
+                                                      ->whereNull('course_id');
+                                           });
+                               })
+                               ->whereNull('course_id');
+                    });
+                }
+
+                // 3. Course-scoped elections (accessible ONLY to voters enrolled in this specific course)
+                $scope->orWhere(function ($courseSub) use ($vCourseId, $vCourseText) {
+                    $courseSub->where(function ($typeSub) {
+                        $typeSub->where('election_type', 'course')
+                                ->orWhereNotNull('course_id');
+                    });
+
+                    $courseSub->where(function ($matchSub) use ($vCourseId, $vCourseText) {
+                        if ($vCourseId) {
+                            $matchSub->where('course_id', $vCourseId);
+                        } else {
+                            $matchSub->whereRaw('0 = 1');
+                        }
+
+                        if ($vCourseText && $vCourseText !== 'Not Specified') {
+                            $matchSub->orWhereHas('course', function ($cQ) use ($vCourseText) {
+                                $cQ->whereRaw('LOWER(code) = ?', [strtolower($vCourseText)])
+                                   ->orWhereRaw('LOWER(name) = ?', [strtolower($vCourseText)]);
+                            });
+                        }
+                    });
+                });
             });
         }
 
@@ -66,9 +143,22 @@ class ElectionController extends Controller
         return response()->json($elections->map(fn($e) => $this->transformElection($e)));
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        $election = Election::with('positions.candidates')->findOrFail($id);
+        $election = Election::with(['positions.candidates', 'organization', 'course'])->findOrFail($id);
+
+        $user = $request->user();
+        if ($user instanceof Voter && !$election->isEligibleVoter($user)) {
+            $requiredScope = $election->isCourseScoped()
+                ? ($election->course?->code ?: $election->course?->name ?: 'a specific course')
+                : ($election->organization?->name ?: 'a specific department');
+
+            return response()->json([
+                'error' => "This election is restricted to {$requiredScope} enrolled voters.",
+                'election_type' => $election->election_type,
+            ], 403);
+        }
+
         return response()->json($this->transformElection($election));
     }
 
@@ -127,11 +217,21 @@ class ElectionController extends Controller
 
     public function results($id)
     {
-        $election = Election::with(['organization', 'positions.candidates.votes'])->findOrFail($id);
+        $election = Election::with(['organization', 'course', 'positions.candidates.votes'])->findOrFail($id);
 
         $isClosed = in_array($election->status, ['ended', 'closed']);
         $user = request()->user();
         $isVoter = $user instanceof \App\Models\Voter;
+
+        if ($isVoter && !$election->isEligibleVoter($user)) {
+            $requiredScope = $election->isCourseScoped()
+                ? ($election->course?->code ?: $election->course?->name ?: 'a specific course')
+                : ($election->organization?->name ?: 'a specific department');
+
+            return response()->json([
+                'error' => "Results for this election are restricted to {$requiredScope} enrolled voters.",
+            ], 403);
+        }
 
         // Security / Integrity enforcement:
         // Candidate vote counts and standings are strictly sealed until the election has ended/closed.

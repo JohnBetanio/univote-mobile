@@ -59,15 +59,73 @@
                         </div>
                     </div>
                     
+                    <!-- Target Audience Scope Selection -->
                     <div class="form-group">
-                        <label>Target Audience</label>
-                        <select v-model="form.organization_id" class="form-select" :disabled="loading">
-                            <option value="">All Organizations (Global Announcement)</option>
+                        <label>Target Audience Scope *</label>
+                        <div class="scope-selector-grid">
+                            <label class="scope-card-option" :class="{ 'scope-card-selected': form.target_type === 'all' }">
+                                <input type="radio" v-model="form.target_type" value="all" :disabled="loading" />
+                                <div class="scope-card-icon scope-icon-global">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
+                                    </svg>
+                                </div>
+                                <div class="scope-card-details">
+                                    <span class="scope-card-title">Campus-Wide</span>
+                                    <span class="scope-card-desc">All students &amp; organizations</span>
+                                </div>
+                            </label>
+
+                            <label class="scope-card-option" :class="{ 'scope-card-selected': form.target_type === 'organization' }">
+                                <input type="radio" v-model="form.target_type" value="organization" :disabled="loading" />
+                                <div class="scope-card-icon scope-icon-org">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6.75h1.5m-1.5 3h1.5m-1.5 3h1.5M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+                                    </svg>
+                                </div>
+                                <div class="scope-card-details">
+                                    <span class="scope-card-title">Organization</span>
+                                    <span class="scope-card-desc">Specific department only</span>
+                                </div>
+                            </label>
+
+                            <label class="scope-card-option" :class="{ 'scope-card-selected': form.target_type === 'course' }">
+                                <input type="radio" v-model="form.target_type" value="course" :disabled="loading" />
+                                <div class="scope-card-icon scope-icon-course">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.627 48.627 0 0 1 12 20.904a48.627 48.627 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.57 50.57 0 0 0-2.658-.813A59.905 59.905 0 0 1 12 3.493a59.902 59.902 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5" />
+                                    </svg>
+                                </div>
+                                <div class="scope-card-details">
+                                    <span class="scope-card-title">Specific Course</span>
+                                    <span class="scope-card-desc">Target specific student course</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Organization Sub-Field -->
+                    <div v-if="form.target_type === 'organization'" class="form-group scope-sub-field">
+                        <label>Select Organization *</label>
+                        <select v-model="form.organization_id" class="form-select" :disabled="loading" required>
+                            <option value="" disabled>— Select an organization —</option>
                             <option v-for="org in availableOrgs" :key="org.id" :value="org.id">
                                 {{ org.name }} ({{ org.code }})
                             </option>
                         </select>
-                        <small class="form-help">Select who will see this announcement on their dashboard.</small>
+                        <small class="form-help">Only voters enrolled in this organization will receive this announcement.</small>
+                    </div>
+
+                    <!-- Course Sub-Field -->
+                    <div v-if="form.target_type === 'course'" class="form-group scope-sub-field">
+                        <label>Select Target Course *</label>
+                        <select v-model="form.course_id" class="form-select" :disabled="loading" required>
+                            <option value="" disabled>— Select a course —</option>
+                            <option v-for="c in availableCourses" :key="c.id" :value="c.id">
+                                {{ c.name }} ({{ c.code }})
+                            </option>
+                        </select>
+                        <small class="form-help">Only students enrolled in this course will receive this announcement.</small>
                     </div>
 
                     <div class="form-group">
@@ -106,16 +164,23 @@
 
         <!-- Announcements Toolbar & List -->
         <div v-else-if="announcements.length > 0">
-            <!-- Filter by Organization Bar -->
+            <!-- Filter by Audience Bar -->
             <div class="filter-toolbar">
                 <div class="filter-group">
                     <label class="filter-label">Filter by Audience:</label>
-                    <select v-model="selectedOrgFilter" class="form-select filter-select">
+                    <select v-model="selectedAudienceFilter" class="form-select filter-select">
                         <option value="all">All Announcements ({{ announcements.length }})</option>
-                        <option value="global">Global Only (All Orgs)</option>
-                        <option v-for="org in availableOrgs" :key="org.id" :value="org.id">
-                            {{ org.name }} ({{ org.code }})
-                        </option>
+                        <option value="global">Campus-Wide Only</option>
+                        <optgroup v-if="availableOrgs.length > 0" label="By Organization">
+                            <option v-for="org in availableOrgs" :key="`org-${org.id}`" :value="`org:${org.id}`">
+                                Org: {{ org.name }} ({{ org.code }})
+                            </option>
+                        </optgroup>
+                        <optgroup v-if="availableCourses.length > 0" label="By Enrolled Course">
+                            <option v-for="c in availableCourses" :key="`course-${c.id}`" :value="`course:${c.id}`">
+                                Course: {{ c.name }} ({{ c.code }})
+                            </option>
+                        </optgroup>
                     </select>
                 </div>
                 <div class="filter-counter">
@@ -133,17 +198,26 @@
                 >
                 <!-- Target Badge -->
                 <div class="announcement-target">
-                    <span v-if="announcement.organization" class="badge badge-org">
+                    <!-- Course Target Badge -->
+                    <span v-if="announcement.course || announcement.target_type === 'course'" class="badge badge-course">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10.394 2.08a1 1 0 0 0-.788 0l-7 3a1 1 0 0 0 0 1.84L5.25 8.051a10.99 10.99 0 0 0-.25 2.31c0 .61.057 1.206.166 1.783L3.106 13.08a1 1 0 0 0 0 1.84l7 3a1 1 0 0 0 .788 0l7-3a1 1 0 0 0 0-1.84l-2.06-1.02a11.025 11.025 0 0 0 .166-1.783c0-.79-.088-1.56-.25-2.31l2.644-1.131a1 1 0 0 0 0-1.84l-7-3Z" />
+                        </svg>
+                        Course: {{ announcement.course ? (announcement.course.code || announcement.course.name) : 'Course' }}
+                    </span>
+                    <!-- Organization Target Badge -->
+                    <span v-else-if="announcement.organization || announcement.target_type === 'organization'" class="badge badge-org">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                             <path d="M4 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a1 1 0 1 1 0 2h-3a1 1 0 0 1-1-1v-2a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v2a1 1 0 0 1-1 1H4a1 1 0 1 1 0-2V4Zm3 1h2v2H7V5Zm2 4H7v2h2V9Zm2-4h2v2h-2V5Zm2 4h-2v2h2V9Z" />
                         </svg>
-                        {{ announcement.organization.code }}
+                        {{ announcement.organization ? (announcement.organization.code || announcement.organization.name) : 'Organization' }}
                     </span>
+                    <!-- Global / Campus-Wide Badge -->
                     <span v-else class="badge badge-global">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                             <path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM4.205 11.5a5.955 5.955 0 0 1-.2-1.5c0-.508.063-1.002.182-1.478l4.475 2.237a.5.5 0 0 1 .274.453v3.743a5.98 5.98 0 0 1-4.731-3.455ZM10 17.94V14.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5H11a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 .5-.5h1.5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 1 .5-.5h1.341c.21 0 .408.1.536.265l1.621 2.08A5.982 5.982 0 0 1 10 17.94ZM16.326 9H15a.5.5 0 0 1-.5-.5V7a.5.5 0 0 0-.5-.5h-2a.5.5 0 0 1-.5-.5V4.707a5.98 5.98 0 0 1 4.826 4.293Z" />
                         </svg>
-                        Global
+                        Campus-Wide
                     </span>
                     <span class="announcement-date">{{ formatDate(announcement.created_at) }}</span>
                 </div>
@@ -236,31 +310,44 @@ export default {
                 title: "",
                 content: "",
                 type: "info",
-                organization_id: "" 
+                target_type: "all",
+                organization_id: "",
+                course_id: "" 
             },
             showForm: false,
             isEditing: false,
             loading: false,
             deletingId: null,
             submitting: false,
-            selectedOrgFilter: "all",
+            selectedAudienceFilter: "all",
         };
     },
     computed: {
         announcements() {
             return this.electionStore.announcements;
         },
-        filteredAnnouncements() {
-            if (!this.selectedOrgFilter || this.selectedOrgFilter === "all") {
-                return this.announcements;
-            }
-            if (this.selectedOrgFilter === "global") {
-                return this.announcements.filter(a => !a.organization_id);
-            }
-            return this.announcements.filter(a => Number(a.organization_id) === Number(this.selectedOrgFilter));
-        },
         availableOrgs() {
             return this.electionStore.announcementOrganizations || [];
+        },
+        availableCourses() {
+            return this.electionStore.announcementCourses || [];
+        },
+        filteredAnnouncements() {
+            if (!this.selectedAudienceFilter || this.selectedAudienceFilter === "all") {
+                return this.announcements;
+            }
+            if (this.selectedAudienceFilter === "global") {
+                return this.announcements.filter(a => a.target_type === 'all' || (!a.organization_id && !a.course_id));
+            }
+            if (this.selectedAudienceFilter.startsWith("org:")) {
+                const orgId = Number(this.selectedAudienceFilter.replace("org:", ""));
+                return this.announcements.filter(a => Number(a.organization_id) === orgId && (a.target_type === 'organization' || !a.course_id));
+            }
+            if (this.selectedAudienceFilter.startsWith("course:")) {
+                const courseId = Number(this.selectedAudienceFilter.replace("course:", ""));
+                return this.announcements.filter(a => Number(a.course_id) === courseId || a.course?.id === courseId);
+            }
+            return this.announcements;
         },
         loadingAnnouncements() {
             return this.electionStore.isLoading;
@@ -288,7 +375,15 @@ export default {
             }
         },
         resetForm() {
-            this.form = { id: null, title: "", content: "", type: "info", organization_id: "" };
+            this.form = { 
+                id: null, 
+                title: "", 
+                content: "", 
+                type: "info", 
+                target_type: "all", 
+                organization_id: "", 
+                course_id: "" 
+            };
             this.isEditing = false;
             this.showForm = false;
         },
@@ -298,7 +393,9 @@ export default {
                 title: announcement.title || "",
                 content: announcement.content,
                 type: announcement.type || "info",
-                organization_id: announcement.organization_id || ""
+                target_type: announcement.target_type || (announcement.course_id ? 'course' : (announcement.organization_id ? 'organization' : 'all')),
+                organization_id: announcement.organization_id || "",
+                course_id: announcement.course_id || ""
             };
             this.isEditing = true;
             this.showForm = true;
@@ -313,6 +410,16 @@ export default {
                 return;
             }
 
+            if (this.form.target_type === 'organization' && !this.form.organization_id) {
+                this.showError("Please select a target organization");
+                return;
+            }
+
+            if (this.form.target_type === 'course' && !this.form.course_id) {
+                this.showError("Please select a target course");
+                return;
+            }
+
             this.loading = true;
             this.submitting = true;
 
@@ -321,7 +428,9 @@ export default {
                     title: this.form.title,
                     content: this.form.content,
                     type: this.form.type,
-                    organization_id: this.form.organization_id || null
+                    target_type: this.form.target_type,
+                    organization_id: this.form.target_type === 'organization' ? this.form.organization_id : null,
+                    course_id: this.form.target_type === 'course' ? this.form.course_id : null,
                 };
 
                 if (this.isEditing && this.form.id) {
@@ -625,6 +734,75 @@ export default {
 
 .badge-global { background: #e0f2fe; color: #0284c7; }
 .badge-org { background: #f3e8ff; color: #7e22ce; }
+.badge-course { background: #fef3c7; color: #92400e; }
+
+/* Scope Selector Grid */
+.scope-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+}
+.scope-card-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.scope-card-option:hover {
+    border-color: #cbd5e1;
+    background: #f1f5f9;
+}
+.scope-card-option input[type="radio"] {
+    margin: 0;
+    accent-color: #2c5364;
+}
+.scope-card-selected {
+    border-color: #2c5364;
+    background: #eef5f8;
+    box-shadow: 0 0 0 1px #2c5364;
+}
+.scope-card-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.scope-card-icon svg {
+    width: 18px;
+    height: 18px;
+}
+.scope-icon-global { background: #e0f2fe; color: #0284c7; }
+.scope-icon-org { background: #f3e8ff; color: #7e22ce; }
+.scope-icon-course { background: #fef3c7; color: #b45309; }
+.scope-card-details {
+    display: flex;
+    flex-direction: column;
+}
+.scope-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e293b;
+}
+.scope-card-desc {
+    font-size: 11px;
+    color: #64748b;
+}
+.scope-sub-field {
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
 
 .announcement-date {
     font-size: 12px;

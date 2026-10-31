@@ -24,7 +24,10 @@ class OrganizationController extends Controller
             ->orderBy('name')
             ->get();
 
-        return response()->json(['organizations' => $organizations]);
+        return response()->json([
+            'organizations' => $organizations,
+            'courses' => Course::getAllCourses(),
+        ]);
     }
 
     public function store(Request $request)
